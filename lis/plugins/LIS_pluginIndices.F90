@@ -30,6 +30,7 @@ module LIS_pluginIndices
 !  27 Jan 2014: Shugong Wang, added HRAP projection
 !   4 Nov 2014: Jonathan Case, added support for daily NESDIS/VIIRS GVF for Noah
 !  16 Aug 2016: Mahdi Navari, added PILDAS  
+!  05 Feb 2020: Yeosang Yoon, add ASOS (kwater)
 !
 !EOP
   PRIVATE
@@ -182,6 +183,7 @@ module LIS_pluginIndices
    character*50, public,  parameter :: LIS_AWRALforcId    = "AWRAL processed forcing"
    character*50, public,  parameter :: LIS_mrmsId            = "MRMS"
    character*50, public,  parameter :: LIS_era5Id            = "ERA5"
+   character*50, public,  parameter :: LIS_ASOSId            = "ASOS"
 !-------------------------------------------------------------------------
 ! land surface parameters
 !-------------------------------------------------------------------------
