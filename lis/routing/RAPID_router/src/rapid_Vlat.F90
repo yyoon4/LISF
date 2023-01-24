@@ -41,7 +41,6 @@ PetscInt                               :: nreach_new
 PetscInt                               :: col, row                !
 PetscScalar                            :: conversion_factor=0.001 !convert from kg/m^2 (i.e. mm) to m
 
-!PetscInt,    dimension(:), allocatable :: rivid_new
 PetscScalar, dimension(:), allocatable :: m3_riv                  ! inflow data to RAPID river reaches are in m3 accumulated over a time step
 PetscScalar                            :: m3_riv_np
 
@@ -59,7 +58,6 @@ if (rank==0) then
 j=1
 k=1
 allocate(m3_riv(IS_riv_bas))
-!allocate(rivid_new(IS_riv_bas))
 
 do i=1,n_weight_table
      m3_riv(k)=0;
@@ -87,7 +85,6 @@ do i=1,n_weight_table
            ZV_riv_tot_lon(k)=lon(i+j-1)
 
         end do
-!        rivid_new(k)=rivid(i)
         k=k+1
         
      else
@@ -106,14 +103,11 @@ do i=1,n_weight_table
         ZV_riv_tot_lat(k)=lat(i)
         ZV_riv_tot_lon(k)=lon(i)
 
- !       rivid_new(k)=rivid(i)
         k=k+1
-
      end if
 end do
 
 nreach_new=k-1
-
 end if
 
 !*******************************************************************************
