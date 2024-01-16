@@ -120,9 +120,10 @@ module LDT_pluginIndices
         = "GLASS LAI"
    character*50, public,  parameter :: LDT_LPRMvodobsId            &
         = "LPRM vegetation optical depth"
-
    character*50, public,  parameter :: LDT_MCD15A2HlaiobsId            &
         = "MCD15A2H LAI"
+   character*50, public,  parameter :: LDT_LISlsmPrecipobsId          &
+        = "LIS LSM total precipitation"
    character*50, public,  parameter :: LDT_VIIRSgvfobsId            &
         = "VIIRS GVF"                                                    !Y.Kwon
    character*50, public,  parameter :: LDT_CDFSgvfobsId            &
@@ -230,6 +231,7 @@ module LDT_pluginIndices
    character*50, public,  parameter :: LDT_usgslcNATId    = "USGS_Native"
    character*50, public,  parameter :: LDT_modislcLISId   = "MODIS_LIS"
    character*50, public,  parameter :: LDT_modislcNATId   = "MODIS_Native"
+   character*50, public,  parameter :: LDT_mcd12q1Id      = "MCD12Q1"
    character*50, public,  parameter :: LDT_modislcPFTId   = "MODIS_Native_PFT"
    character*50, public,  parameter :: LDT_ukmoigbpPFTId  = "UKMO_IGBP_Native_PFT"
    character*50, public,  parameter :: LDT_UM_ancillaryId = "UM_Native_Ancillary"

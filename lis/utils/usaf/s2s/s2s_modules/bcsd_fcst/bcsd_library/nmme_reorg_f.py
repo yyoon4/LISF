@@ -1,4 +1,15 @@
 #!/usr/bin/env python
+
+#-----------------------BEGIN NOTICE -- DO NOT EDIT-----------------------
+# NASA Goddard Space Flight Center
+# Land Information System Framework (LISF)
+# Version 7.4
+#
+# Copyright (c) 2022 United States Government as represented by the
+# Administrator of the National Aeronautics and Space Administration.
+# All Rights Reserved.
+#-------------------------END NOTICE -- DO NOT EDIT-----------------------
+
 """
 # Author: Abheera Hazra
 #  This module reorganizes NMME preciptation forecasts
@@ -7,9 +18,8 @@
 #  Removed basemap call and added xarray and xesmf
 #  module calls
 #  Date: Nov 07, 2022
-# In[28]:
 """
-from __future__ import division
+
 from datetime import datetime
 import os
 import sys
@@ -20,11 +30,16 @@ import numpy as np
 from netCDF4 import Dataset as nc4_dataset
 from netCDF4 import date2num as nc4_date2num
 # pylint: enable=no-name-in-module
-from Shrad_modules import read_nc_files
-from BCSD_stats_functions import get_domain_info
 import xarray as xr
 import xesmf as xe
 import yaml
+# pylint: disable=import-error
+from shrad_modules import read_nc_files
+from bcsd_stats_functions import get_domain_info
+from bcsd_function import VarLimits as lim
+# pylint: enable=import-error
+
+limits = lim()
 
 def write_3d_netcdf(infile, var, varname, description, source, \
                     var_units, lons, lats, sdate):
@@ -66,10 +81,9 @@ NMME_MODEL = str(sys.argv[6])
 ENS_NUM = int(sys.argv[7])
 CONFIGFILE = str(sys.argv[8])
 with open(CONFIGFILE, 'r', encoding="utf-8") as file:
-        config = yaml.safe_load(file)
+    config = yaml.safe_load(file)
 LEAD_MONS = config['EXP']['lead_months']
-        
-#MODEL = ['NCEP-CFSv2', 'NASA-GEOSS2S', 'CanCM4i', 'GEM-NEMO', \
+
 MODEL = ['NCEP-CFSv2', 'NASA-GEOSS2S', 'CanSIPS-IC3', 'COLA-RSMAS-CCSM4', 'GFDL-SPEAR']
 MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', \
        'Sep', 'Oct', 'Nov', 'Dec']
@@ -107,14 +121,6 @@ EX_NMME_FILENAME = '/ex_raw_nmme_download.nc'
 GE1 = SUPPLEMENTARY_DIR + EX_NMME_FILENAME
 LONI = read_nc_files(GE1, 'X')
 LATI = read_nc_files(GE1, 'Y')
-LON1 = LONI.copy()
-for n, l in enumerate(LON1):
-    if l >= 180:
-        LON1[n] = LON1[n]-360.
-LONI = LON1
-LON1 = LONI[0:180]
-LON2 = LONI[180:]
-LONI = np.hstack((LON2, LON1))
 
 ## Read all forecast files
 MM = CMN-1
@@ -183,13 +189,24 @@ ds_in["XPREC"] = xr.DataArray(
         lat=(["lat"], LATI),
         lon=(["lon"], LONI))
     )
-ds_out = xr.Dataset(
+ds_out_unmasked = xr.Dataset(
             {
                 "lat": (["lat"], LATS),
                 "lon": (["lon"], LONS),
         })
-regridder = xe.Regridder(ds_in, ds_out, "bilinear", periodic=True)
-ds_out = regridder(ds_in)
+regridder = xe.Regridder(ds_in, ds_out_unmasked, "conservative", periodic=True)
+ds_out_unmasked = regridder(ds_in)
+ds_out = ds_out_unmasked.copy()
+
+# LDT mask
+ldt_xr = xr.open_dataset(config['SETUP']['supplementarydir'] + '/lis_darun/' + \
+        config['SETUP']['ldtinputfile'])
+mask_2d = np.array(ldt_xr['LANDMASK'].values)
+mask_exp = mask_2d[np.newaxis, np.newaxis,:,:]
+darray = np.array(ds_out_unmasked['XPREC'].values)
+mask = np.broadcast_to(mask_exp, darray.shape)
+darray[mask == 0] = -9999.
+ds_out['XPREC'].values = darray
 
 ## Reorganize and write
 YR = CYR
@@ -205,6 +222,7 @@ for m in range(0, ENS_NUM):
             os.makedirs(OUTDIR)
 
         XPRECI = np.nan_to_num(XPRECI, nan=-9999.)
+        XPRECI = limits.clip_array(XPRECI, var_name="PRECTOT", max_val=0.004, precip=True)
         LATS = np.nan_to_num(LATS, nan=-9999.)
         LONS = np.nan_to_num(LONS, nan=-9999.)
 
@@ -212,4 +230,3 @@ for m in range(0, ENS_NUM):
         write_3d_netcdf(OUTFILE, XPRECI, 'PRECTOT', 'Downscaled to 0.25deg', \
         'Raw NMME at 1deg', 'kg m-2 s-1', LONS, LATS, SDATE)
         print(f"Writing {OUTFILE}")
-

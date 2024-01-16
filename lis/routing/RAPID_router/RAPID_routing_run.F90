@@ -17,11 +17,12 @@
 ! !REVISION HISTORY: 
 ! 18 Mar 2021: Yeosang Yoon: Initial implementation in LIS 
 ! 25 Oct 2022: Yeosang Yoon: Support to run with LSM ensemble mean runoff variables
-! 
+! 27 Apr 2023: Eric Kemp: Updated length of output file.
 ! !USES: 
 subroutine RAPID_routing_run(n)
 
   use ESMF
+  use LIS_constantsMod
   use LIS_coreMod
   use LIS_timeMgrMod
   use LIS_routingMod
@@ -48,8 +49,8 @@ subroutine RAPID_routing_run(n)
   integer               :: status
   logical               :: alarmCheck
 
-  character*200         :: qout_filename
-
+  !character*200         :: qout_filename
+  character(len=LIS_CONST_PATH_LEN) :: qout_filename ! EMK
   ! for mpi
   real,   allocatable   :: runoff1_t(:)
   real,   allocatable   :: runoff2_t(:)
@@ -197,6 +198,7 @@ subroutine RAPID_routing_run(n)
              writeint=RAPID_routing_struc(n)%outInterval)
 
      ! run RAPID
+#ifdef PETSc
      call RAPID_model_main (n,RAPID_routing_struc(n)%bQinit,RAPID_routing_struc(n)%bQfinal,RAPID_routing_struc(n)%bV,             &
                             RAPID_routing_struc(n)%bhum,RAPID_routing_struc(n)%bfor,RAPID_routing_struc(n)%bdam,                  &
                             RAPID_routing_struc(n)%binfluence,RAPID_routing_struc(n)%buq,                                         &
@@ -208,7 +210,7 @@ subroutine RAPID_routing_run(n)
                             RAPID_routing_struc(n)%nmlfile,qout_filename,                                                         &
                             LIS_rc%gnc(n),LIS_rc%gnr(n),surface_runoff,baseflow,RAPID_routing_struc(n)%initCheck,                 &
                             RAPID_routing_struc(n)%dt,RAPID_routing_struc(n)%routingInterval)
-
+#endif
      deallocate(surface_runoff)
      deallocate(baseflow)
      

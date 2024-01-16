@@ -397,15 +397,22 @@ contains
 
     TRACE_ENTER("dom_setup")
     allocate(LIS_domain(n)%ntiles_pergrid(LIS_rc%gnc(n)*LIS_rc%gnr(n)))
+    LIS_domain(n)%ntiles_pergrid = 0 ! EMK TEST
     allocate(LIS_domain(n)%str_tind(LIS_rc%gnc(n)*LIS_rc%gnr(n)))
+    LIS_domain(n)%str_tind = 0 ! EMK TEST
     allocate(ntiles_pergrid(LIS_rc%lnc(n)*LIS_rc%lnr(n)),stat=ierr)
+    ntiles_pergrid = 0
     allocate(ntiles_pergrid_red(LIS_rc%lnc_red(n)*LIS_rc%lnr_red(n)),stat=ierr)
-
+    ntiles_pergrid_red = 0
     allocate(npatch_pergrid(LIS_rc%lnc(n)*LIS_rc%lnr(n),LIS_rc%max_model_types))
+    npatch_pergrid = 0
     allocate(npatch_pergrid_red(LIS_rc%lnc(n)*LIS_rc%lnr(n),LIS_rc%max_model_types))
+    npatch_pergrid_red = 0
     do m=1,LIS_rc%max_model_types
        allocate(LIS_surface(n,m)%npatch_pergrid(LIS_rc%gnc(n)*LIS_rc%gnr(n)))
+       LIS_surface(n,m)%npatch_pergrid = 0
        allocate(LIS_surface(n,m)%str_patch_ind(LIS_rc%gnc(n)*LIS_rc%gnr(n)))
+       LIS_surface(n,m)%str_patch_ind = 0
     enddo
 
     do t=1,LIS_rc%ntiles(n)
@@ -2762,6 +2769,15 @@ end subroutine LIS_quilt_b_domain
           elseif(map_proj.eq."LAMBERT CONFORMAL") then      
              LIS_rc%lis_map_proj = "lambert"
              
+             ! CM Ensure that the number of lat/lon dimensions is 2D for this projection
+             if(LIS_rc%nlatlon_dimensions == '1D') then
+               write(LIS_logunit,*) &
+                  '[ERR] The lambert map projection cannot be written with 1D lat/lon fields.'
+               write(LIS_logunit,*) &
+                  '[WARN] The lat/lon fields will be written in 2D'
+               LIS_rc%nlatlon_dimensions = '2D'
+             end if
+
              ios = nf90_get_att(ftn, NF90_GLOBAL, 'TRUELAT1',LIS_domain(n)%truelat1)
              call LIS_verify(ios, 'Error in nf90_get_att: TRUELAT1')
 
@@ -2793,6 +2809,15 @@ end subroutine LIS_quilt_b_domain
 
           elseif(map_proj.eq."MERCATOR") then              
 
+             ! CM Ensure that the number of lat/lon dimensions is 2D for this projection
+             if(LIS_rc%nlatlon_dimensions == '1D') then
+               write(LIS_logunit,*) &
+                  '[ERR] The MERCATOR map projection cannot be written with 1D lat/lon fields.'
+               write(LIS_logunit,*) &
+                  '[WARN] The lat/lon fields will be written in 2D'
+               LIS_rc%nlatlon_dimensions = '2D'
+             end if
+
              ios = nf90_get_att(ftn, NF90_GLOBAL, 'TRUELAT1',LIS_domain(n)%truelat1)
              call LIS_verify(ios, 'Error in nf90_get_att: TRUELAT1')
 
@@ -2819,6 +2844,15 @@ end subroutine LIS_quilt_b_domain
                   0.0,LIS_rc%lnc(n),LIS_rc%lnr(n),LIS_domain(n)%lisproj)
              
           elseif(map_proj.eq."POLAR STEREOGRAPHIC") then              
+
+             ! CM Ensure that the number of lat/lon dimensions is 2D for this projection 
+             if(LIS_rc%nlatlon_dimensions == '1D') then
+               write(LIS_logunit,*) &
+                  '[ERR] The polar stereographic map projection cannot be written with 1D lat/lon fields.'
+               write(LIS_logunit,*) &
+                  '[WARN] The lat/lon fields will be written in 2D'
+               LIS_rc%nlatlon_dimensions = '2D'
+             end if
 
              ios = nf90_get_att(ftn, NF90_GLOBAL, 'TRUELAT1',LIS_domain(n)%truelat1)
              call LIS_verify(ios, 'Error in nf90_get_att: TRUELAT1')
@@ -2849,6 +2883,15 @@ end subroutine LIS_quilt_b_domain
              
           elseif(map_proj.eq."GAUSSIAN") then 
 
+             ! CM Ensure that the number of lat/lon dimensions is 2D for this projection
+             if(LIS_rc%nlatlon_dimensions == '1D') then
+               write(LIS_logunit,*) &
+                  '[ERR] The gaussian map projection cannot be written with 1D lat/lon fields.'
+               write(LIS_logunit,*) &
+                  '[WARN] The lat/lon fields will be written in 2D'
+               LIS_rc%nlatlon_dimensions = '2D'
+             end if
+
              ios = nf90_get_att(ftn, NF90_GLOBAL, 'NUMBER OF LAT CIRCLES',&
                   LIS_domain(n)%nlatcircles)
              call LIS_verify(ios, 'Error in nf90_get_att: NUMBER_OF_LAT_CIRCLES')
@@ -2871,6 +2914,15 @@ end subroutine LIS_quilt_b_domain
              LIS_rc%gridDesc(n,20) = 64
 
           elseif(map_proj.eq."HRAP") then 
+   
+             ! CM Ensure that the number of lat/lon dimensions is 2D for this projection
+             if(LIS_rc%nlatlon_dimensions == '1D') then
+               write(LIS_logunit,*) &
+                  '[ERR] The HRAP map projection cannot be written with 1D lat/lon fields.'
+               write(LIS_logunit,*) &
+                  '[WARN] The lat/lon fields will be written in 2D'
+               LIS_rc%nlatlon_dimensions = '2D'
+             end if
 
              LIS_rc%gridDesc(n,1) = 8
              LIS_rc%gridDesc(n,2) = LIS_rc%lnc(n)
@@ -2891,6 +2943,16 @@ end subroutine LIS_quilt_b_domain
                   0.0,LIS_rc%lnc(n),LIS_rc%lnr(n),LIS_domain(n)%lisproj)
              
           elseif(map_proj.eq."UTM") then 
+        
+             ! CM Ensure that the number of lat/lon dimensions is 2D for this projection
+             if(LIS_rc%nlatlon_dimensions == '1D') then
+               write(LIS_logunit,*) &
+                  '[ERR] The UTM map projection cannot be written with 1D lat/lon fields.'
+               write(LIS_logunit,*) &
+                  '[WARN] The lat/lon fields will be written in 2D'
+               LIS_rc%nlatlon_dimensions = '2D'
+             end if 
+
 
              LIS_rc%gridDesc(n,1) = 7
              LIS_rc%gridDesc(n,2) = LIS_rc%lnc(n)

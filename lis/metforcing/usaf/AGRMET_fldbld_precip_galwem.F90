@@ -123,7 +123,7 @@ subroutine AGRMET_fldbld_precip_galwem(n,julhr,fc_hr,fg_data)
   character*120           :: avnfile, avnfile2
   integer                 :: yr1, mo1, da1, hr1
   integer                 :: julhr
-  character*100           :: message     ( 20 )
+  character*255           :: message     ( 20 )
   integer                 :: iginfo      ( 2 )
   real                    :: gridres
   integer                 :: alert_number
@@ -508,7 +508,7 @@ subroutine AGRMET_fldbld_read_precip_galwem(fg_filename, ifguess, jfguess,&
 !
 !EOP
   character*9                   :: cstat
-  character*100                 :: message     ( 20 )
+  character*255                 :: message     ( 20 )
   integer                       :: count_prec
   integer                       :: i
   integer                       :: ierr
@@ -550,7 +550,7 @@ subroutine AGRMET_fldbld_read_precip_galwem(fg_filename, ifguess, jfguess,&
      count_prec = 0
 
      write(LIS_logunit,*)' '
-     write(LIS_logunit,*)'[MSG] Reading first guess precip ', trim(fg_filename)
+     write(LIS_logunit,*)'[INFO] Reading first guess precip ', trim(fg_filename)
 
      call grib_count_in_file(ftn,nvars,ierr)
      call LIS_verify(ierr, 'error in grib_count_in_file in ' // &

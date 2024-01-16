@@ -7,10 +7,10 @@
 #This module bias corrects a forecasts following
 #probability mapping approach as described in Wood et al. 2002
 #Date: August 06, 2015
-# In[28]:
 """
 
-from __future__ import division
+
+
 import calendar
 import sys
 from datetime import datetime
@@ -18,9 +18,23 @@ import os
 from dateutil.relativedelta import relativedelta
 import xarray as xr
 import numpy as np
-from Shrad_modules import read_nc_files
-from BCSD_stats_functions import write_4d_netcdf, get_domain_info
-from BCSD_functionfast import CALC_BCSD
+# pylint: disable=import-error
+from shrad_modules import read_nc_files
+from bcsd_stats_functions import write_4d_netcdf, get_domain_info
+from bcsd_function import calc_bcsd
+from bcsd_function import VarLimits as lim
+# pylint: enable=import-error
+
+limits = lim()
+CF2VAR = {
+    'PRECTOT': 'PRECTOT',
+    'LWS': 'LWS',
+    'SLRSF': 'SLRSF',
+    'PS': 'PS',
+    'Q2M':'Q2M',
+    'T2M': 'T2M',
+    'WIND10M': 'WIND',
+    }
 
 ## Usage: <Name of variable in observed climatology>
 ## <Name of variable in reforecast climatology
@@ -59,7 +73,7 @@ FCST_INFILE_TEMPLATE = '{}/raw/Monthly/{}/{:04d}/ens{:01d}/{}.cfsv2.{:04d}{:02d}
 
 CONFIG_FILE = str(sys.argv[14])
 LAT1, LAT2, LON1, LON2 = get_domain_info(CONFIG_FILE, extent=True)
-LATS, LONS = get_domain_info(CONFIG_FILE, coord=True) 
+LATS, LONS = get_domain_info(CONFIG_FILE, coord=True)
 
 ### Output directory
 OUTFILE_TEMPLATE = '{}/{}.CFSv2.{}_{:04d}_{:04d}.nc'
@@ -103,7 +117,7 @@ def get_index(ref_array, my_value):
 def latlon_calculations(ilat_min, ilat_max, ilon_min, ilon_max, \
                         np_obs_clim_array, np_fcst_clim_array, \
                         lead_final, target_fcst_syr, target_fcst_eyr, \
-                        fcst_syr, ens_num, mon, month_name, bc_var, \
+                        fcst_syr, ens_num, mon, bc_var, \
                         tiny, fcst_coarse, correct_fcst_coarse):
     """Lat and Lon"""
     num_lats = ilat_max-ilat_min+1
@@ -117,8 +131,6 @@ def latlon_calculations(ilat_min, ilat_max, ilon_min, ilon_max, \
         for ilon in range(num_lons):
             lon_num = ilon_min + ilon
 
-            count_grid = ilon + ilat*num_lons
-
             ## First read Observed clim data (all months available in one file)
             ## so don't have to read it again for each lead time
             obs_clim_all = np_obs_clim_array[:, :, ilat, ilon]
@@ -131,10 +143,9 @@ def latlon_calculations(ilat_min, ilat_max, ilon_min, ilon_max, \
             #print("shape of FCST_COARSE: ", TARGET_FCST_VAL_ARR.shape)
 
             correct_fcst_coarse[:, :, :, lat_num, lon_num] = \
-            CALC_BCSD(obs_clim_all, fcst_clim_all, lead_final, \
+            calc_bcsd(obs_clim_all, fcst_clim_all, lead_final, \
             target_fcst_val_arr, target_fcst_syr, target_fcst_eyr, \
-            fcst_syr, ens_num, mon, month_name, count_grid, bc_var, tiny)
-
+            fcst_syr, ens_num, mon, bc_var, tiny)
 
 def monthly_calculations(mon):
     """Monthly Bias Correction"""
@@ -163,10 +174,10 @@ def monthly_calculations(mon):
                 init_fcst_year, ens+1, month_name, fcst_year, fcst_month)
                 print(infile)
                 fcst_coarse[init_fcst_year-TARGET_FCST_SYR, lead_num, ens, ] = \
-                read_nc_files(infile, FCST_VAR)[0,]
+                read_nc_files(infile, FCST_VAR)[:]
     # Defining array to store bias-corrected monthly forecasts
     correct_fcst_coarse = np.ones(((TARGET_FCST_EYR-TARGET_FCST_SYR)+1, \
-    LEAD_FINAL, ENS_NUM, len(LATS), len(LONS)))*-999
+    LEAD_FINAL, ENS_NUM, len(LATS), len(LONS)))*-9999.
     print("shape of fcst_coarse: ", fcst_coarse.shape)
 
     # Get the lat/lon indexes for the ranges
@@ -189,11 +200,16 @@ def monthly_calculations(mon):
     print("np_fcst_clim_array:", np_fcst_clim_array.shape, type(np_fcst_clim_array))
     latlon_calculations(ilat_min, ilat_max, ilon_min, ilon_max, \
     np_obs_clim_array, np_fcst_clim_array, LEAD_FINAL, TARGET_FCST_SYR, \
-    TARGET_FCST_EYR, FCST_SYR, ENS_NUM, mon, month_name, BC_VAR, \
+    TARGET_FCST_EYR, FCST_SYR, ENS_NUM, mon, BC_VAR, \
     TINY, fcst_coarse, correct_fcst_coarse)
 
     correct_fcst_coarse = np.ma.masked_array(correct_fcst_coarse, \
-                          mask=correct_fcst_coarse == -999)
+                                             mask=correct_fcst_coarse == -9999.)
+
+    # clip limits - monthly BC NMME precip:
+    correct_fcst_coarse = limits.clip_array(correct_fcst_coarse, \
+            var_name=CF2VAR.get(FCST_VAR))
+
     outfile = OUTFILE_TEMPLATE.format(OUTDIR, FCST_VAR, month_name, \
               TARGET_FCST_SYR, TARGET_FCST_EYR)
     print(f"Now writing {outfile}")
