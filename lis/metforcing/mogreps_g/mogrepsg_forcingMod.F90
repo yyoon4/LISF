@@ -42,12 +42,12 @@ module mogrepsg_forcingMod
      character(len=LIS_CONST_PATH_LEN) :: odir     !MOGREPS-G forecast forcing Directory
      character*20                      :: runmode
      integer                           :: max_ens_members
+     integer                           :: bc        !option for bias correction
+     character(len=LIS_CONST_PATH_LEN) :: cdf_fname !MOGREPS-G model CDF file name
 
      integer, allocatable   :: gindex(:,:)
 
      integer                :: mi
-     !integer                :: day_check1
-     !integer                :: day_check2
      
      integer, allocatable   :: n111(:)
      integer, allocatable   :: n121(:)
@@ -70,8 +70,14 @@ module mogrepsg_forcingMod
      integer                :: init_yr, init_mo, init_da, init_hr
      real, allocatable      :: metdata1(:,:,:) 
      real, allocatable      :: metdata2(:,:,:)
-
+    
      integer                :: nmodels   
+
+     ! precipitation bias correction 
+     real, allocatable      :: pcp1_bc(:,:)
+     real, allocatable      :: pcp2_bc(:,:)   
+     real, allocatable      :: bc_param_a(:,:)
+     real, allocatable      :: bc_param_b(:,:)
 
      ! only for v-wind due to difference resolution
      integer                :: nrv
@@ -322,6 +328,26 @@ contains
 
           call neighbor_interp_input(n,gridDesci_v(n,:),&
                mogrepsg_struc(n)%nv113)
+       endif
+    enddo
+
+    ! precipitation bias correction
+    do n=1,LIS_rc%nnest
+       if (mogrepsg_struc(n)%bc == 1) then
+          allocate(mogrepsg_struc(n)%pcp1_bc(mogrepsg_struc(n)%max_ens_members,LIS_rc%ngrid(n)))
+          allocate(mogrepsg_struc(n)%pcp2_bc(mogrepsg_struc(n)%max_ens_members,LIS_rc%ngrid(n)))
+
+          allocate(mogrepsg_struc(n)%bc_param_a(LIS_rc%ngrid(n),8)) !8: lead time
+          allocate(mogrepsg_struc(n)%bc_param_b(LIS_rc%ngrid(n),8))
+
+          mogrepsg_struc(n)%pcp1_bc = 0
+          mogrepsg_struc(n)%pcp2_bc = 0
+          mogrepsg_struc(n)%bc_param_a = 0
+          mogrepsg_struc(n)%bc_param_b = 0
+
+          ! read cdf parameters
+          call get_cdf_params(n,mogrepsg_struc(n)%cdf_fname,LIS_rc%mo,&
+               mogrepsg_struc(n)%bc_param_a, mogrepsg_struc(n)%bc_param_b)         
        endif
     enddo
 

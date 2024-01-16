@@ -15,6 +15,7 @@
 !
 ! !REVISION HISTORY:
 ! 26 Jan 2023: Yeosang Yoon, initial code
+! 13 Mar 2023: Yeosang Yoon, update code to fit new format (precpitation)
 !
 ! !INTERFACE:
 subroutine read_mogrepsg(n, m, findex, order, gribfile, rc)
@@ -83,6 +84,7 @@ subroutine read_mogrepsg(n, m, findex, order, gribfile, rc)
   real            :: uwind(LIS_rc%lnc(n),LIS_rc%lnr(n))     !Instantaneous zonal wind interpolated to 10 metres [m/s]
   real            :: vwind(LIS_rc%lnc(n),LIS_rc%lnr(n))     !Instantaneous meridional wind interpolated to 10 metres[m/s]
   real            :: ps(LIS_rc%lnc(n),LIS_rc%lnr(n))        !Instantaneous Surface Pressure [Pa] 
+  real            :: prectot(LIS_rc%lnc(n),LIS_rc%lnr(n))   ! Total precipitation [kg/m^2]
 
   integer, intent(out) :: rc
 
@@ -196,7 +198,7 @@ subroutine read_mogrepsg(n, m, findex, order, gribfile, rc)
    jfguess = iginfo(2)
 
    call fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess, &
-           tair, qair, swdown, lwdown, uwind, vwind, ps, rc)
+           tair, qair, swdown, lwdown, uwind, vwind, ps, prectot, rc)
 
    call assign_processed_mogrepsgforc(n, m, order, 1, tair)
    call assign_processed_mogrepsgforc(n, m, order, 2, qair)
@@ -205,13 +207,14 @@ subroutine read_mogrepsg(n, m, findex, order, gribfile, rc)
    call assign_processed_mogrepsgforc(n, m, order, 5, uwind)
    call assign_processed_mogrepsgforc(n, m, order, 6, vwind)
    call assign_processed_mogrepsgforc(n, m, order, 7, ps)
+   call assign_processed_mogrepsgforc(n, m, order, 8, prectot)
       
 #endif
 
 end subroutine read_mogrepsg
 
 subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,     &
-                                tair, qair, swdown, lwdown, uwind, vwind, ps, rc)                            
+                                tair, qair, swdown, lwdown, uwind, vwind, ps, prectot, rc)                            
  
 ! !USES:
   use LIS_coreMod, only : LIS_rc
@@ -236,6 +239,8 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   real,           intent(out)   :: uwind(LIS_rc%lnc(n),LIS_rc%lnr(n))     !Instantaneous zonal wind interpolated to 10 metres [m/s]
   real,           intent(out)   :: vwind(LIS_rc%lnc(n),LIS_rc%lnr(n))     !Instantaneous meridional wind interpolated to 10 metres[m/s]
   real,           intent(out)   :: ps(LIS_rc%lnc(n),LIS_rc%lnr(n))        !Instantaneous Surface Pressure [Pa]
+  real,           intent(out)   :: prectot(LIS_rc%lnc(n),LIS_rc%lnr(n))   !Total precipitation [kg/m^2]
+
   integer,        intent(out)   :: rc
 !
 ! !DESCRIPTION:
@@ -250,7 +255,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   integer                       :: count_tair, count_qair
   integer                       :: count_swdown, count_lwdown
   integer                       :: count_uwind, count_vwind
-  integer                       :: count_ps
+  integer                       :: count_ps, count_prectot
   integer                       :: ierr
   integer                       :: istat1
   integer                       :: igrib
@@ -268,6 +273,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   real, allocatable             :: fg_uwind   ( : , : )
   real, allocatable             :: fg_vwind   ( : , : )
   real, allocatable             :: fg_ps      ( : , : )
+  real, allocatable             :: fg_prectot ( : , : )
 
   logical                       :: found_inq
 
@@ -302,6 +308,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   allocate ( fg_uwind   (ifguess, jfguess) )   ! nr=960
   allocate ( fg_vwind   (ifguess, jfguess+1) ) ! v-wind, nr=961
   allocate ( fg_ps      (ifguess, jfguess) )
+  allocate ( fg_prectot (ifguess, jfguess) )
 
   allocate ( dum1d   (ifguess*jfguess) )
   allocate ( dumv1d  (ifguess*(jfguess+1)) ) ! v-wind
@@ -314,6 +321,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   fg_uwind = LIS_rc%udef
   fg_vwind = LIS_rc%udef
   fg_ps = LIS_rc%udef
+  fg_prectot = LIS_rc%udef
   dum1d = LIS_rc%udef
 
   tair = LIS_rc%udef
@@ -323,6 +331,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   uwind = LIS_rc%udef
   vwind = LIS_rc%udef
   ps = LIS_rc%udef
+  prectot = LIS_rc%udef
 
   ! From this point, we must deallocate memory before returning.
   ! Unfortunately this means using a GOTO statement if a problem is
@@ -334,6 +343,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   count_uwind = 0
   count_vwind = 0
   count_ps = 0
+  count_prectot = 0
 
   call grib_count_in_file(ftn,nvars,ierr)
   if ( ierr .ne. 0 ) then
@@ -448,6 +458,9 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
      case('ps')       ! surface pressure
         fg_ps = reshape(dum1d, (/ifguess,jfguess/))
         count_ps = count_ps + 1
+     case('prectot')  ! accumulated total precipitation
+        fg_prectot = reshape(dum1d, (/ifguess,jfguess/))
+        count_prectot = count_prectot + 1
 
      case default ! Internal error, we shouldn't be here
         write(LIS_logunit,*)'[WARN] Unknown grib_message ',grib_msg
@@ -476,7 +489,7 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
      if ( (count_tair   .eq. 1)  .and. (count_qair    .eq. 1)   .and. &
           (count_swdown .eq. 1 ) .and. (count_lwdown  .eq. 1)   .and. &
           (count_uwind  .eq. 1)  .and. (count_vwind   .eq. 1)   .and. &
-          (count_ps     .eq. 1)) then
+          (count_ps     .eq. 1)  .and. (count_prectot .eq. 1)) then
         exit
      end if
   enddo ! Loop through all GRIB file fields
@@ -496,6 +509,8 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   call interp_mogrepsg_vwind(n, findex, ifguess, jfguess+1, .false., fg_vwind, vwind)
   ! ps
   call interp_mogrepsg(n, findex, ifguess, jfguess, .false., fg_ps, ps)
+  ! prectot
+  call interp_mogrepsg(n, findex, ifguess, jfguess, .true., fg_prectot, prectot)
 
   ! At this point, we have everything.  Close the file and return.
   call grib_close_file(ftn)
@@ -516,6 +531,8 @@ subroutine fldbld_read_mogrepsg(n, findex, order, gribfile, ifguess, jfguess,   
   deallocate ( fg_uwind   )
   deallocate ( fg_vwind   )
   deallocate ( fg_ps      )
+  deallocate ( fg_prectot )
+
   rc = 0
 #endif
 
@@ -569,6 +586,11 @@ function check_mogrepsg_message(param_disc_val, &
             param_cat_val  == 3 .and. &
             param_num_val  == 1 ) then
       check_mogrepsg_message = 'ps'      ! Instantaneous Surface Pressure [Pa]
+   elseif ( param_disc_val == 0 .and.  &
+            param_cat_val  == 1 .and.  &
+            param_num_val  == 49 .and. &
+            surface_val    == 1 ) then
+      check_mogrepsg_message = 'prectot' ! Total precipitation [kg/m2]
    else
       check_mogrepsg_message = 'none'
    endif
@@ -584,7 +606,7 @@ subroutine interp_mogrepsg(n, findex, ifguess, jfguess, pcp_flag, input, output)
   implicit none
 ! !ARGUMENTS:
   integer, intent(in)  :: n
-  integer, intent(in)   :: findex
+  integer, intent(in)  :: findex
   integer, intent(in)  :: ifguess
   integer, intent(in)  :: jfguess
   logical, intent(in)  :: pcp_flag
@@ -633,9 +655,9 @@ subroutine interp_mogrepsg(n, findex, ifguess, jfguess, pcp_flag, input, output)
   select case( LIS_rc%met_interp(findex) )
 
     case( "bilinear" )
-     call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                     &
-          var,lo,output,mi,mo,                                         &
-          LIS_domain(n)%lat,LIS_domain(n)%lon,                         &
+     call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                         &
+          var,lo,output,mi,mo,                                             &
+          LIS_domain(n)%lat,LIS_domain(n)%lon,                             &
           mogrepsg_struc(n)%w111,mogrepsg_struc(n)%w121,                   &
           mogrepsg_struc(n)%w211,mogrepsg_struc(n)%w221,                   &
           mogrepsg_struc(n)%n111,mogrepsg_struc(n)%n121,                   &
@@ -643,17 +665,17 @@ subroutine interp_mogrepsg(n, findex, ifguess, jfguess, pcp_flag, input, output)
 
     case( "budget-bilinear" )
      if (pcp_flag) then
-        call conserv_interp(LIS_rc%gridDesc(n,:),lb,                   &
-             var,lo,output,mi,mo,                                      &
-             LIS_domain(n)%lat, LIS_domain(n)%lon,                     &
+        call conserv_interp(LIS_rc%gridDesc(n,:),lb,                       &
+             var,lo,output,mi,mo,                                          &
+             LIS_domain(n)%lat, LIS_domain(n)%lon,                         &
              mogrepsg_struc(n)%w112,mogrepsg_struc(n)%w122,                &
              mogrepsg_struc(n)%w212,mogrepsg_struc(n)%w222,                &
              mogrepsg_struc(n)%n112,mogrepsg_struc(n)%n122,                &
              mogrepsg_struc(n)%n212,mogrepsg_struc(n)%n222,LIS_rc%udef,iret)
      else
-        call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                  &
-             var,lo,output,mi,mo,                                      &
-             LIS_domain(n)%lat, LIS_domain(n)%lon,                     &
+        call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                      &
+             var,lo,output,mi,mo,                                          &
+             LIS_domain(n)%lat, LIS_domain(n)%lon,                         &
              mogrepsg_struc(n)%w111,mogrepsg_struc(n)%w121,                &
              mogrepsg_struc(n)%w211,mogrepsg_struc(n)%w221,                &
              mogrepsg_struc(n)%n111,mogrepsg_struc(n)%n121,                &
@@ -689,7 +711,7 @@ subroutine interp_mogrepsg_vwind(n, findex, ifguess, jfguess, pcp_flag, input, o
   implicit none
 ! !ARGUMENTS:
   integer, intent(in)  :: n
-  integer, intent(in)   :: findex
+  integer, intent(in)  :: findex
   integer, intent(in)  :: ifguess
   integer, intent(in)  :: jfguess
   logical, intent(in)  :: pcp_flag
@@ -738,9 +760,9 @@ subroutine interp_mogrepsg_vwind(n, findex, ifguess, jfguess, pcp_flag, input, o
   select case( LIS_rc%met_interp(findex) )
 
     case( "bilinear" )
-     call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                     &
-          var,lo,output,mi,mo,                                         &
-          LIS_domain(n)%lat,LIS_domain(n)%lon,                         &
+     call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                           &
+          var,lo,output,mi,mo,                                               &
+          LIS_domain(n)%lat,LIS_domain(n)%lon,                               &
           mogrepsg_struc(n)%wv111,mogrepsg_struc(n)%wv121,                   &
           mogrepsg_struc(n)%wv211,mogrepsg_struc(n)%wv221,                   &
           mogrepsg_struc(n)%nv111,mogrepsg_struc(n)%nv121,                   &
@@ -748,17 +770,17 @@ subroutine interp_mogrepsg_vwind(n, findex, ifguess, jfguess, pcp_flag, input, o
 
     case( "budget-bilinear" )
      if (pcp_flag) then
-        call conserv_interp(LIS_rc%gridDesc(n,:),lb,                   &
-             var,lo,output,mi,mo,                                      &
-             LIS_domain(n)%lat, LIS_domain(n)%lon,                     &
+        call conserv_interp(LIS_rc%gridDesc(n,:),lb,                         &
+             var,lo,output,mi,mo,                                            &
+             LIS_domain(n)%lat, LIS_domain(n)%lon,                           &
              mogrepsg_struc(n)%wv112,mogrepsg_struc(n)%wv122,                &
              mogrepsg_struc(n)%wv212,mogrepsg_struc(n)%wv222,                &
              mogrepsg_struc(n)%nv112,mogrepsg_struc(n)%nv122,                &
              mogrepsg_struc(n)%nv212,mogrepsg_struc(n)%nv222,LIS_rc%udef,iret)
      else
-        call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                  &
-             var,lo,output,mi,mo,                                      &
-             LIS_domain(n)%lat, LIS_domain(n)%lon,                     &
+        call bilinear_interp(LIS_rc%gridDesc(n,:),lb,                        &
+             var,lo,output,mi,mo,                                            &
+             LIS_domain(n)%lat, LIS_domain(n)%lon,                           &
              mogrepsg_struc(n)%wv111,mogrepsg_struc(n)%wv121,                &
              mogrepsg_struc(n)%wv211,mogrepsg_struc(n)%wv221,                &
              mogrepsg_struc(n)%nv111,mogrepsg_struc(n)%nv121,                &
@@ -766,9 +788,9 @@ subroutine interp_mogrepsg_vwind(n, findex, ifguess, jfguess, pcp_flag, input, o
      endif
 
      case( "neighbor" )
-        call neighbor_interp(LIS_rc%gridDesc(n,:),lb,                     &
-             var,lo,output,mi,mo,                                         &
-             LIS_domain(n)%lat, LIS_domain(n)%lon,                        &
+        call neighbor_interp(LIS_rc%gridDesc(n,:),lb,                        &
+             var,lo,output,mi,mo,                                            &
+             LIS_domain(n)%lat, LIS_domain(n)%lon,                           &
              mogrepsg_struc(n)%nv113,LIS_rc%udef,iret)
 
      case DEFAULT

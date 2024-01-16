@@ -15,6 +15,8 @@
 !
 ! !REVISION HISTORY:
 ! 26 Jan 2023: Yeosang Yoon, initial code
+! 13 Mar 2023: Yeosang Yoon, update codes to fit new format
+! 03 Jul 2023: Yeosang Yoon, update codes for  precipitation bias correction
 !
 ! !INTERFACE:
 subroutine get_mogrepsg(n, findex)
@@ -42,7 +44,7 @@ subroutine get_mogrepsg(n, findex)
 !  the current model timestep.
 
 !EOP
-  integer           :: order, ferror, m
+  integer           :: order, ferror, m, t
   character(len=LIS_CONST_PATH_LEN) :: fname
   integer           :: yr1, mo1, da1, hr1, mn1, ss1, doy1
   integer           :: yr2, mo2, da2, hr2, mn2, ss2, doy2
@@ -56,6 +58,8 @@ subroutine get_mogrepsg(n, findex)
   integer           :: fcsthr_intv
   integer           :: fcst_hour
   integer           :: openfile
+  real              :: pcp1, pcp2
+  integer           :: lead_time1, lead_time2
 
   ! MOGREPS-G cycles every 6 hours; ecch cycle provide up to 192 hours (8 days; 3-hour interval) forecast
 
@@ -135,42 +139,22 @@ subroutine get_mogrepsg(n, findex)
         if(LIS_rc%tscount(n) == 1) then  ! Read in first two book-ends 
            ferror=0
            order=1
-          ! met forcings except for pcp  
            call get_mogrepsg_filename(mogrepsg_struc(n)%odir,mogrepsg_struc(n)%init_yr,&
                 mogrepsg_struc(n)%init_mo,mogrepsg_struc(n)%init_da,mogrepsg_struc(n)%init_hr,&
-                hr1,m,fname)
+                0,m,fname)
 
            write(LIS_logunit,*)'[INFO] Getting MOGREPS-G forecast file1 ... ',trim(fname)
            call read_mogrepsg(n, m, findex, order, fname, ferror)
            if(ferror.ge.1) mogrepsg_struc(n)%fcsttime1=time1
-                 
-           ! pcp
-           call get_mogrepsg_pcp_filename(mogrepsg_struc(n)%odir,mogrepsg_struc(n)%init_yr,&
-                mogrepsg_struc(n)%init_mo,mogrepsg_struc(n)%init_da,mogrepsg_struc(n)%init_hr,&
-                hr1,m,fname)
-
-           write(LIS_logunit,*)'[INFO] Getting MOGREPS-G precpitation forecast file1 ... ',trim(fname)
-           call read_mogrepsg_pcp(n, m, findex, order, fname, ferror)
-           if(ferror.ge.1) mogrepsg_struc(n)%fcsttime1=time1
 
            ferror=0
            order=2
-           ! met forcings except for pcp
            call get_mogrepsg_filename(mogrepsg_struc(n)%odir,mogrepsg_struc(n)%init_yr,&
                 mogrepsg_struc(n)%init_mo,mogrepsg_struc(n)%init_da,mogrepsg_struc(n)%init_hr,&
                 mogrepsg_struc(n)%fcst_hour,m,fname)
 
            write(LIS_logunit,*)'[INFO] Getting MOGREPS-G forecast file2 ... ',trim(fname)
            call read_mogrepsg(n, m, findex, order, fname, ferror)
-           if(ferror.ge.1) mogrepsg_struc(n)%fcsttime2=time2
-
-           ! pcp
-           call get_mogrepsg_pcp_filename(mogrepsg_struc(n)%odir,mogrepsg_struc(n)%init_yr,&
-                mogrepsg_struc(n)%init_mo,mogrepsg_struc(n)%init_da,mogrepsg_struc(n)%init_hr,&
-                mogrepsg_struc(n)%fcst_hour,m,fname)
-
-           write(LIS_logunit,*)'[INFO] Getting MOGREPS-G precpitation forecast file2 ... ',trim(fname)
-           call read_mogrepsg_pcp(n, m, findex, order, fname, ferror)
            if(ferror.ge.1) mogrepsg_struc(n)%fcsttime2=time2
 
            !only for T+0 due to mssing LW varaible
@@ -187,20 +171,48 @@ subroutine get_mogrepsg(n, findex)
            call read_mogrepsg(n, m, findex, order, fname, ferror)
            if(ferror.ge.1) mogrepsg_struc(n)%fcsttime2=time2
 
-           ! pcp
-           call get_mogrepsg_pcp_filename(mogrepsg_struc(n)%odir,mogrepsg_struc(n)%init_yr,&
-                mogrepsg_struc(n)%init_mo,mogrepsg_struc(n)%init_da,mogrepsg_struc(n)%init_hr,&
-                mogrepsg_struc(n)%fcst_hour,m,fname)
-
-           write(LIS_logunit,*)'[INFO] Getting MOGREPS-G precpitation forecast file2 ... ',trim(fname)
-           call read_mogrepsg_pcp(n, m, findex, order, fname, ferror)
-           if(ferror.ge.1) mogrepsg_struc(n)%fcsttime2=time2
-
            !only for T+141 due to mssing LW varaible
            if(mogrepsg_struc(n)%fcst_hour == 141) then
               mogrepsg_struc(n)%metdata2(4,m,:) = mogrepsg_struc(n)%metdata1(4,m,:)
            endif
         endif
+
+        ! apply precipitation bias correction (cdf from difference bewteen NAPFA and MOGREPS-G)
+        if (mogrepsg_struc(n)%bc == 1) then
+           lead_time1=floor((float(mogrepsg_struc(n)%fcst_hour)-3)/24)+1    !order = 1        
+           lead_time2=floor((float(mogrepsg_struc(n)%fcst_hour))/24)+1      !order = 2
+
+           if (lead_time1 > 8) then
+              lead_time1 = 8
+           endif
+           if (lead_time2 > 8) then
+              lead_time2 = 8
+           endif
+   
+           do t=1, LIS_rc%ngrid(n)
+              if(mogrepsg_struc(n)%metdata1(8,m,t).ne.LIS_rc%udef) then    !order = 1
+                 pcp1=mogrepsg_struc(n)%metdata1(8,m,t)*mogrepsg_struc(n)%bc_param_a(t,lead_time1)+&
+                    mogrepsg_struc(n)%bc_param_b(t,lead_time1)+mogrepsg_struc(n)%metdata1(8,m,t)
+                 if(pcp1 >= 0) then
+                    mogrepsg_struc(n)%pcp1_bc(m,t) = pcp1
+                 else
+                    mogrepsg_struc(n)%pcp1_bc(m,t) = mogrepsg_struc(n)%metdata1(8,m,t)
+                 endif
+              endif
+
+              if(mogrepsg_struc(n)%metdata2(8,m,t).ne.LIS_rc%udef) then    !order = 2
+                 ! param_b*2 due to considering the subtraction of metdata1 from metdata2
+                 pcp2=mogrepsg_struc(n)%metdata2(8,m,t)*mogrepsg_struc(n)%bc_param_a(t,lead_time2)+&
+                    mogrepsg_struc(n)%bc_param_b(t,lead_time2)+mogrepsg_struc(n)%metdata2(8,m,t)
+                 if(pcp2 >= 0) then
+                    mogrepsg_struc(n)%pcp2_bc(m,t) = pcp2
+                 else
+                    mogrepsg_struc(n)%pcp2_bc(m,t) = mogrepsg_struc(n)%metdata2(8,m,t)
+                 endif
+              endif
+           enddo
+        endif
+
      enddo
   endif
   openfile=0
@@ -237,50 +249,23 @@ subroutine get_mogrepsg_filename(rootdir,yr,mo,da,hr,fc_hr,ens_id,filename)
 
   write (UNIT=chr, FMT='(i2.2)') hr        ! cycle 00/06/12/18
   write (UNIT=fchr, FMT='(i3.3)') fc_hr    ! forecast time 
-  write (UNIT=ens, FMT='(i2.2)') ens_id-1  ! start 0
   write (UNIT=ftime, FMT='(i4, i2.2, i2.2)') yr, mo, da
 
   fname = 'prods_op_mogreps-g_'
+
+  !00/12z cycle memebers 00,01-17
+  !06/18z cycle memebers 00,18-34
+  if ((hr == 0) .or. (hr == 12)) then
+       write (UNIT=ens, FMT='(i2.2)') ens_id-1   ! start 00, 01 - 17
+  else
+     if (ens_id == 1) then
+        write (UNIT=ens, FMT='(i2.2)') ens_id-1  ! start 00
+     else 
+        write (UNIT=ens, FMT='(i2.2)') ens_id+16 ! start 18-34
+     endif
+  endif
 
   filename = trim(rootdir)//'/'//ftime//chr//'/'//trim(fname) &
              //ftime//'_'//chr//'_'//ens//'_'//fchr//'.grib2'
 end subroutine get_mogrepsg_filename
 
-!BOP
-!
-! !ROUTINE: get_mogrepsg_pcp_filename
-! \label{get_mogrepsg_pcp_filename}
-!
-! !INTERFACE:
-subroutine get_mogrepsg_pcp_filename(rootdir,yr,mo,da,hr,fc_hr,ens_id,filename)
-
-  use LIS_logMod, only: LIS_logunit, LIS_endrun
-  implicit none
-! !ARGUMENTS:
-  character(len=*), intent(in)  :: rootdir
-  integer,          intent(in)  :: yr,mo,da,hr
-  integer,          intent(in)  :: fc_hr
-  integer,          intent(in)  :: ens_id
-  character(len=*), intent(out) :: filename
-!
-! !DESCRIPTION:
-!  This subroutine puts together MOGREPS-G file name for
-!   operational precipitation products
-!EOP
-  character(8) :: ftime
-  character(2) :: chr
-  character(3) :: fchr
-  character(2) :: ens
-
-  character(len=36) :: fname
-
-  write (UNIT=chr, FMT='(i2.2)') hr        ! cycle 00/06/12/18
-  write (UNIT=fchr, FMT='(i3.3)') fc_hr    ! forecast time
-  write (UNIT=ens, FMT='(i2.2)') ens_id-1  ! start 0
-  write (UNIT=ftime, FMT='(i4, i2.2, i2.2)') yr, mo, da
-
-  fname = 'prods_op_mogreps-g_'
-
-  filename = trim(rootdir)//'/'//ftime//chr//'/'//trim(fname) &
-             //ftime//'_'//chr//'_'//ens//'_'//fchr//'.precip.grib2'
-end subroutine get_mogrepsg_pcp_filename

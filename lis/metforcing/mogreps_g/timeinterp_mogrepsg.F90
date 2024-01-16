@@ -67,6 +67,7 @@ subroutine timeinterp_mogrepsg(n,findex)
   type(ESMF_Field)   :: psurfField,pcpField
   real,pointer       :: tmp(:),q2(:),uwind(:),vwind(:)
   real,pointer       :: swd(:),lwd(:),psurf(:),pcp(:)
+  real               :: pcp_tmp
   integer            :: mfactor, m, k, tid, fcsthr_intv
 ! ________________________________________
 
@@ -217,7 +218,7 @@ subroutine timeinterp_mogrepsg(n,findex)
               else
                  write(LIS_logunit,*) '[ERR] timeinterp_mogrepsg -- Stopping because ', &
                                       'forcing not udef but lt 0,'
-                 write(LIS_logunit,*)'[ERR] timeinterp_galwem -- ', &
+                 write(LIS_logunit,*)'[ERR] timeinterp_mogrepsg -- ', &
                                       t,swd(t),mogrepsg_struc(n)%metdata2(3,m,index1), &
                                       ' (',LIS_localPet,')'
                  call LIS_endrun
@@ -237,13 +238,30 @@ subroutine timeinterp_mogrepsg(n,findex)
            tid = (t-1)*LIS_rc%nensem(n)+(m-1)*mfactor+k
            index1 = LIS_domain(n)%tile(tid)%index
 
-           if(mogrepsg_struc(n)%metdata2(8,m,index1).ne.LIS_rc%udef) then
-              ! account for the accum fields
-              pcp(tid)=(mogrepsg_struc(n)%metdata2(8,m,index1)-mogrepsg_struc(n)%metdata1(8,m,index1))/(3600*3)
-              if(pcp(tid).lt.0) then
-                 pcp(tid) = 0.0
+           ! apply precipitation bias correction (cdf from difference bewteen NAPFA and MOGREPS-G)
+           if (mogrepsg_struc(n)%bc == 1) then  !1 - use; or 0
+              if(mogrepsg_struc(n)%pcp2_bc(m,index1).ne.LIS_rc%udef) then
+                 ! account for the accum fields
+                 pcp(tid)=(mogrepsg_struc(n)%pcp2_bc(m,index1)-mogrepsg_struc(n)%pcp1_bc(m,index1))/(3600*3)
+                 if(pcp(tid).lt.0) then
+                    pcp_tmp=(mogrepsg_struc(n)%metdata2(8,m,index1)-mogrepsg_struc(n)%metdata1(8,m,index1))/(3600*3)  
+                    if(pcp_tmp>=0) then
+                       pcp(tid)=pcp_tmp
+                    else
+                       pcp(tid) = 0.0
+                    endif
+                 endif
+              endif
+           else  !don't apply bc
+              if(mogrepsg_struc(n)%metdata2(8,m,index1).ne.LIS_rc%udef) then
+                 ! account for the accum fields
+                 pcp(tid)=(mogrepsg_struc(n)%metdata2(8,m,index1)-mogrepsg_struc(n)%metdata1(8,m,index1))/(3600*3)
+                 if(pcp(tid).lt.0) then
+                    pcp(tid) = 0.0
+                 endif
               endif
            endif
+
         enddo
      enddo
   enddo
