@@ -300,6 +300,10 @@ subroutine LIS_metforcing_plugin
    use mrms_grib_forcingMod
 #endif
 
+#if ( defined MF_ASOS )
+   use ASOS_forcingMod
+#endif
+
 #if ( defined MF_GDDP )
    use gddp_forcingMod
 #endif   
@@ -659,6 +663,12 @@ subroutine LIS_metforcing_plugin
    external timeinterp_mrms_grib
    external finalize_mrms_grib
    external reset_mrms_grib
+#endif
+
+#if ( defined MF_ASOS )
+   external get_ASOS
+   external timeinterp_ASOS
+   external finalize_ASOS
 #endif
 
 #if ( defined MF_GDDP )
@@ -1211,6 +1221,16 @@ subroutine LIS_metforcing_plugin
    call registerfinalmetforc(trim(LIS_mrmsId)//char(0),finalize_mrms_grib)
    call registerresetmetforc(trim(LIS_mrmsId)//char(0),reset_mrms_grib)
 #endif
+
+#if ( defined MF_ASOS )
+! - ASOS forcing
+   call registerinitmetforc(trim(LIS_ASOSId)//char(0),init_ASOS)
+   call registerretrievemetforc(trim(LIS_ASOSId)//char(0),get_ASOS)
+   call registertimeinterpmetforc(trim(LIS_ASOSId)//char(0), &
+                                  timeinterp_ASOS)
+   call registerfinalmetforc(trim(LIS_ASOSId)//char(0),finalize_ASOS)
+#endif
+
 #if ( defined MF_GDDP)
    call registerinitmetforc(trim(LIS_gddpId)//char(0),init_gddp)
    call registerretrievemetforc(trim(LIS_gddpId)//char(0),get_gddp)

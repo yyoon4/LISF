@@ -2515,6 +2515,29 @@ subroutine LIS_lsmda_plugin
    call registerlsmdadescalestatevar(trim(LIS_noahmp36Id)//"+"//&
         trim(LIS_MCD15A2HlaiobsId)//char(0),noahmp36_descale_veg)
 
+   !MCD15A3H
+   call registerlsmdainit(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_daveg_init)
+   call registerlsmdagetstatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_getvegvars)
+   call registerlsmdasetstatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_setvegvars)
+   call registerlsmdaupdatestate(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_updatevegvars)
+   call registerlsmdaqcstate(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_qcveg)
+
+   call registerlsmdagetobspred(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_getLAIpred)
+   call registerlsmdaqcobsstate(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_qc_LAIobs)
+   call registerlsmdascalestatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_scale_veg)
+   call registerlsmdadescalestatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_descale_veg)
+   call registerlsmdadiagnosevars(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_veg_DAlog)
+
    call registerlsmdainit(trim(LIS_noahmp36Id)//"+"//&
         trim(LIS_NASASMAPvodobsId)//char(0),noahmp36_daveg_init)
    call registerlsmdagetstatevar(trim(LIS_noahmp36Id)//"+"//&
@@ -2908,6 +2931,29 @@ subroutine LIS_lsmda_plugin
         trim(LIS_MCD15A2HlaiobsId)//char(0),noahmp401_descale_veg)
    call registerlsmdadiagnosevars(trim(LIS_noahmp401Id)//"+"//&
         trim(LIS_MCD15A2HlaiobsId)//char(0),noahmp401_veg_DAlog)
+
+   !MCD15A3H, YY
+   call registerlsmdainit(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_daveg_init)
+   call registerlsmdagetstatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_getvegvars)
+   call registerlsmdasetstatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_setvegvars)
+   call registerlsmdaupdatestate(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_updatevegvars)
+   call registerlsmdaqcstate(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_qcveg)
+
+   call registerlsmdagetobspred(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_getLAIpred)
+   call registerlsmdaqcobsstate(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_qc_LAIobs)
+   call registerlsmdascalestatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_scale_veg)
+   call registerlsmdadescalestatevar(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_descale_veg)
+   call registerlsmdadiagnosevars(trim(LIS_noahmp401Id)//"+"//&
+        trim(LIS_MCD15A3HlaiobsId)//char(0),noahmp401_veg_DAlog)
 
 !Y.Kwon
    call registerlsmdainit(trim(LIS_noahmp401Id)//"+"//&

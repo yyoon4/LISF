@@ -179,6 +179,7 @@ module LIS_pluginIndices
    character*50, public,  parameter :: LIS_galwemId          = "GALWEM forecast"
    character*50, public,  parameter :: LIS_galwemgeId        = "GALWEM-GE forecast"
    character*50, public,  parameter :: LIS_mogrepsgId        = "MOGREPS-G forecast"
+   character*50, public,  parameter :: LIS_ASOSId            = "ASOS"
 
 !-------------------------------------------------------------------------
 ! land surface parameters
@@ -288,6 +289,8 @@ module LIS_pluginIndices
         "MODIS SPoRT LAI"
    character*50, public,  parameter :: LIS_MCD15A2HlaiobsId      = &
         "MCD15A2H LAI"
+   character*50, public,  parameter :: LIS_MCD15A3HlaiobsId      = &
+        "MCD15A3H LAI"
    character*50, public,  parameter :: LIS_VIIRSgvfobsId         = &
         "VIIRS GVF"                                                  !YK
    character*50, public,  parameter :: LIS_CDFSgvfobsId          = &
