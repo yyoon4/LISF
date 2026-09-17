@@ -1483,6 +1483,11 @@ contains
                HYMAP3_routing_struc(n)%seqy,&
                tmp_real_nz,HYMAP3_routing_struc(n)%fldhgt)
 
+          where(HYMAP3_routing_struc(n)%fldhgt >= 9990.0 .or. &
+                HYMAP3_routing_struc(n)%fldhgt < 0.0)
+             HYMAP3_routing_struc(n)%fldhgt = 0.0
+          endwhere
+
           ctitle = 'HYMAP_floodplain_roughness'
           call HYMAP3_read_param_real_2d(ctitle,n,tmp_real)
           call HYMAP3_grid2vector(LIS_rc%lnc(n),LIS_rc%lnr(n),&
@@ -1994,8 +1999,8 @@ contains
                   HYMAP3_routing_struc(n)%fldstomax(:,:,m),&
                   HYMAP3_routing_struc(n)%fldgrd(:,:,m),&
                   HYMAP3_routing_struc(n)%rivare(:,m),&
-                  HYMAP3_routing_struc(n)%fldstoatlev(:,m),&
-                  HYMAP3_routing_struc(n)%fldonlystomax(:,:,m))
+                  HYMAP3_routing_struc(n)%fldonlystomax(:,:,m),&
+                  HYMAP3_routing_struc(n)%fldstoatlev(:,m))
           enddo
        endif
     enddo

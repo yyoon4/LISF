@@ -18,6 +18,8 @@ module HYMAP3_daSWOT_Mod
 ! !REVISION HISTORY:
 ! 15 Apr 24: Yeosang Yoon; Initial specification;
 ! 24 Mar 26: Yeosang Yoon; Updated the code to fit HyMAP3
+! 10 Sep 26: Yeosang Yoon; Update on memory issue for localization
+! 12 Sep 26: Yeosang Yoon; Add additional localization blending option
 !
 ! !USES:
   use ESMF
@@ -48,6 +50,7 @@ module HYMAP3_daSWOT_Mod
      integer                :: localUpdDX
      real, allocatable      :: sites(:,:)
      real, allocatable      :: localWeight(:,:,:)
+     integer                :: localBlendOption
 
   end type daSWOT_dec
 
@@ -118,6 +121,41 @@ contains
           enddo
 
           call ESMF_ConfigFindLabel(LIS_config,&
+               "HYMAP3 localization blending option:",rc=status)
+          do n=1,LIS_rc%nnest
+             call ESMF_ConfigGetAttribute(LIS_config,&
+                  HYMAP3_daSWOT_struc(n)%localBlendOption,&
+                  rc=status)
+             call LIS_verify(status,&
+                  "HYMAP3 localization blending option: not defined")
+
+             if(HYMAP3_daSWOT_struc(n)% &
+                  localBlendOption.lt.1 .or. &
+                  HYMAP3_daSWOT_struc(n)% &
+                  localBlendOption.gt.2) then
+
+                write(LIS_logunit,*) &
+                     '[ERR] Invalid HYMAP3 localization blending option: ', &
+                     HYMAP3_daSWOT_struc(n)%localBlendOption
+                write(LIS_logunit,*) &
+                     '[ERR] Valid options are 1=MAX-AREA, 2=BLEND-AREA'
+                call LIS_endrun
+             endif
+          enddo          
+          
+          do n=1,LIS_rc%nnest
+             if(HYMAP3_daSWOT_struc(n)% &
+                  localBlendOption.eq.1) then
+                write(LIS_logunit,*) &
+                     '[INFO] HYMAP3 localization method: MAX-AREA'
+             elseif(HYMAP3_daSWOT_struc(n)% &
+                  localBlendOption.eq.2) then
+                write(LIS_logunit,*) &
+                     '[INFO] HYMAP3 localization method: BLEND-AREA'
+             endif
+          enddo
+
+          call ESMF_ConfigFindLabel(LIS_config,&
                "HYMAP3 localization weight map:",rc=status)
           do n=1, LIS_rc%nnest
              call ESMF_ConfigGetAttribute(LIS_config,&
@@ -168,34 +206,45 @@ contains
                 status = nf90_inq_varid(nid,'sites',sid)
                 call LIS_verify(status, &
                      'sites field not found in the localization weight file')
+
+                ! Local-memory allocation, Sep 10, 2026
                 allocate(HYMAP3_daSWOT_struc(n)%localWeight(&
-                     LIS_rc%gnc(n), LIS_rc%gnr(n), &
+                     LIS_rc%lnc(n),LIS_rc%lnr(n),&
                      HYMAP3_daSWOT_struc(n)%nsites))
 
-                allocate(HYMAP3_daSWOT_struc(n)%sites( &
-                     LIS_rc%lnc(n), LIS_rc%lnr(n)))
-
                 status = nf90_get_var(nid,drainid,&
-                     HYMAP3_daSWOT_struc(n)%localWeight)
+                     HYMAP3_daSWOT_struc(n)%localWeight,&
+                     start=(/&
+                     LIS_ews_halo_ind(n,LIS_localPet+1),&
+                     LIS_nss_halo_ind(n,LIS_localPet+1),1/),&
+                     count=(/LIS_rc%lnc(n),LIS_rc%lnr(n),&
+                     HYMAP3_daSWOT_struc(n)%nsites/))
+
                 call LIS_verify(status, &
-                     'Error in nf90_get_var in HYMAP3_daSWOT_Mod')
+                     'Error reading local weight hyperslab in '&
+                     //'HYMAP3_daSWOT_Mod')
+
+                allocate(HYMAP3_daSWOT_struc(n)%sites(&
+                     LIS_rc%lnc(n),LIS_rc%lnr(n)))
 
                 status = nf90_get_var(nid,sid,&
-                     HYMAP3_daSWOT_struc(n)%sites, &
-                     start=(/LIS_ews_halo_ind(n,LIS_localPet+1),&
+                     HYMAP3_daSWOT_struc(n)%sites,&
+                     start=(/&
+                     LIS_ews_halo_ind(n,LIS_localPet+1),&
                      LIS_nss_halo_ind(n,LIS_localPet+1)/),&
-                     count = (/LIS_ewe_halo_ind(n,LIS_localPet+1) - &
-                     LIS_ews_halo_ind(n,LIS_localPet+1)+1, &
+                     count=(/&
+                     LIS_ewe_halo_ind(n,LIS_localPet+1) - &
+                     LIS_ews_halo_ind(n,LIS_localPet+1)+1,&
                      LIS_nse_halo_ind(n,LIS_localPet+1) - &
                      LIS_nss_halo_ind(n,LIS_localPet+1)+1/))
 
                 call LIS_verify(status, &
-                     'Error in nf90_get_var in HYMAP3_daSWOT_Mod')
+                     'Error reading local sites hyperslab in '&
+                     //'HYMAP3_daSWOT_Mod')
 
                 status = nf90_close(nid)
                 call LIS_verify(status, &
                      'Error in nf90_close in HYMAP3_daSWOT_Mod')
-
              else
                 write(LIS_logunit,*) '[ERR] localization map: ', &
                      trim(localWeightMap), ' does not exist'

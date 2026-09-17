@@ -356,8 +356,8 @@ subroutine HYMAP2_model_core(n,it,mis,nseqall,nz,time,dt,  &
         call LIS_endrun()
       endif
     !ag (27Apr2020)
-    !elseif(flowmap(ic)==2.or.flowmap(ic)==3.or.flowmap(ic)==4.or.flowmap(ic)==5)then
-    elseif(flowmap(ic)==2.or.flowmap(ic)==3)then
+    elseif(flowmap(ic)==2.or.flowmap(ic)==3.or.flowmap(ic)==4.or.flowmap(ic)==5)then
+    !elseif(flowmap(ic)==2.or.flowmap(ic)==3)then
       !Calculate river flow based on the local inertia wave equation
       call HYMAP2_calc_rivout_iner(outlet(ic),dt,rivelv(ic),rivelv_down,&
            elevtn(ic),nxtdst(ic), rivwth(ic),rivsto(ic),rivsto_down,&
@@ -383,43 +383,6 @@ subroutine HYMAP2_model_core(n,it,mis,nseqall,nz,time,dt,  &
         write(LIS_logunit,*)"[ERR] HYMAP2 floodplain dynamics: unknown value"
         call LIS_endrun()
       endif    
-    !ag (27Apr2020)
-    !Urban flood modeling
-    elseif(flowmap(ic)==4)then
-      !compute urban drainage outflow
-      call HYMAP2_calc_urb_drain_out(dt,drrad,drman,drslp,drstomax(ic),&
-           drtotlgh(ic),drnoutlet(ic),drsto(ic),drout(ic))
-
-      !Calculate river flow based on the local inertia wave equation
-      call HYMAP2_calc_rivout_iner(outlet(ic),dt,rivelv(ic),rivelv_down,&
-           elevtn(ic),nxtdst(ic), rivwth(ic),rivsto(ic),rivsto_down,&
-           rivdph(ic),rivdph_down,rivlen(ic),rivman(ic),&
-           grv,rivout(ic),rivvel(ic),sfcelv(ic), &
-           rivout_pre(ic),rivdph_pre(ic),rivdph_pre_down)
-
-      !Calculate floodplain
-        !Calculate floodplain flow based on the local inertia wave equation
-        call HYMAP2_calc_rivout_iner(outlet(ic),dt,fldelv1(ic),fldelv1_down,&
-             elevtn(ic),nxtdst(ic),fldwth(ic),fldsto(ic),fldsto_down,&
-             flddph1(ic),flddph1_down,rivlen(ic),fldman(ic),&
-             grv,fldout(ic),fldvel(ic),sfcelv0(ic),  &
-             fldout_pre(ic),flddph_pre(ic),flddph_pre_down)!,&
-    !ag(07Jan2021)
-    !Urban flood modeling over kinematic-dominated flow (use kinematic wave)
-    elseif(flowmap(ic)==5)then
-      !compute urban drainage outflow
-      call HYMAP2_calc_urb_drain_out(dt,drrad,drman,drslp,drstomax(ic),&
-           drtotlgh(ic),drnoutlet(ic),drsto(ic),drout(ic))
-
-      !Calculate river flow based on the kinematic wave equation
-      call HYMAP2_calc_rivout_kine(outlet(ic),dt,rivelv(ic),rivelv_down,nxtdst(ic),&
-           rivwth(ic),sfcelv(ic),rivlen(ic),rivman(ic),slpmin, &
-           rivsto(ic),rivdph(ic),rivout(ic),rivvel(ic))
-
-      !Calculate floodplain flow based on the kinematic wave equation
-      call HYMAP2_calc_rivout_kine(outlet(ic),dt,fldelv1(ic),fldelv1_down,&
-           nxtdst(ic),fldwth(ic),sfcelv(ic),rivlen(ic),fldman(ic),slpmin,&
-           fldsto(ic),flddph1(ic),fldout(ic),fldvel(ic))
     else
       write(LIS_logunit,*)"[ERR] HYMAP2 routing method: unknown value",ic,flowmap(ic)
       call LIS_endrun()
