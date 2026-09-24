@@ -372,9 +372,10 @@ subroutine HYMAP3_model_core(n, it, mis, nseqall, nz, time, dt,  &
         !Calculate floodplain
         if(floodflag==1)then
            !Calculate floodplain flow based on the kinematic wave equation
+           !Keep river sfcelv for SWOT DA; store floodplain WSE separately.
            call HYMAP3_calc_rivout_kine(outlet(ic),dt,fldelv1(ic), &
                 fldelv1_down,&
-                nxtdst(ic),fldwth(ic),sfcelv(ic),rivlen(ic),fldman(ic), &
+                nxtdst(ic),fldwth(ic),sfcelv0(ic),rivlen(ic),fldman(ic), &
                 slpmin,&
                 fldsto(ic),flddph1(ic),fldout(ic),fldvel(ic))
         elseif(floodflag==0)then
