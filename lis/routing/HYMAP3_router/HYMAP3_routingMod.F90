@@ -1994,8 +1994,8 @@ contains
                   HYMAP3_routing_struc(n)%fldstomax(:,:,m),&
                   HYMAP3_routing_struc(n)%fldgrd(:,:,m),&
                   HYMAP3_routing_struc(n)%rivare(:,m),&
-                  HYMAP3_routing_struc(n)%fldstoatlev(:,m),&
-                  HYMAP3_routing_struc(n)%fldonlystomax(:,:,m))
+                  HYMAP3_routing_struc(n)%fldonlystomax(:,:,m),&
+                  HYMAP3_routing_struc(n)%fldstoatlev(:,m))
           enddo
        endif
     enddo
