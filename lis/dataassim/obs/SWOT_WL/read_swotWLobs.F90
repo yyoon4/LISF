@@ -72,8 +72,10 @@ subroutine read_swotWLobs(n, k, OBS_State, OBS_Pert_state)
   logical             :: data_upd
   real                :: wl_current(LIS_rc%obs_lnc(k),LIS_rc%obs_lnr(k))
   real                :: wlobs(LIS_rc%obs_lnc(k),LIS_rc%obs_lnr(k))
-  integer             :: t,c,r
-  integer             :: time_now, time_start, time_end, dt
+  integer             :: t,c,r, candidate_count
+  real                :: min_candidate_wse, max_candidate_wse
+  integer             :: time_now, time_start, time_end, time_day_start, dt
+  real(kind=swot_time_kind) :: obs_time
 
   obs_unsc = LIS_rc%udef
   call ESMF_AttributeGet(OBS_State,"Data Directory",wlobsdir,rc=status)
@@ -89,16 +91,20 @@ subroutine read_swotWLobs(n, k, OBS_State, OBS_Pert_state)
    call ESMF_ClockGet(LIS_clock, currTime=currTime, rc=status)
    call ESMF_TimeGet(currTime, yy=yyyy, mm=mm, dd=dd, h=hh, m=mn, s=ss, rc=status)
 
-   if (alarmCheck) then
+   time_day_start = calculate_seconds_since_2000(yyyy, mm, dd, 0, 0, 0)
+
+   ! Also load on a mid-day restart; never reuse yesterday after a missing file.
+   if (alarmCheck .or. swot_wl_struc(n)%time_file.ne.time_day_start) then
       call swotWL_filename(filename, wlobsdir, yyyy, mm, dd)
 
       inquire(file=trim(filename), exist=file_exists)
+      swot_wl_struc(n)%readflag = .false.
+      swot_wl_struc(n)%time_file = time_day_start
 
       if(file_exists) then
          write(LIS_logunit,*)  '[INFO] Reading SWOT WL data ',trim(filename)
          call read_swotWL(filename)
-         swot_wl_struc(n)%time_file = &
-              calculate_seconds_since_2000(yyyy, mm, dd, hh, mn, ss) !since 2000-01-01
+         swot_wl_struc(n)%readflag = .true.
       else
          write(LIS_logunit,*)'[WARN] Cannot find file ',trim(filename)
       end if
@@ -107,7 +113,9 @@ subroutine read_swotWLobs(n, k, OBS_State, OBS_Pert_state)
   time_now = calculate_seconds_since_2000(yyyy, mm, dd, hh, mn, ss) !since 2000-01-01
   dt = nint(swot_wl_struc(n)%daInterval)
 
-  if((time_now <= swot_wl_struc(n)%time_file+86400) .and. &
+  if(swot_wl_struc(n)%readflag .and. &
+       (time_now >= swot_wl_struc(n)%time_file) .and. &
+       (time_now < swot_wl_struc(n)%time_file+86400) .and. &
        (mod(time_now, dt).eq.0)) then
      call ESMF_StateGet(OBS_State,"Observation01",wlfield,rc=status)
      call LIS_verify(status)
@@ -118,23 +126,36 @@ subroutine read_swotWLobs(n, k, OBS_State, OBS_Pert_state)
      wlobs = -9999.0
      fnd = 0
 
-     ! extract SWOT observations from the daily aggregated file for assimilation at the cycle
+     ! Preserve the existing interval-start convention, as in SMAP NRT.
+     ! Use [time_now, time_now+dt): adjacent cycles must not share an observation.
      time_start = time_now
      time_end = time_now + dt
 
      do r =1,LIS_rc%obs_lnr(k)
         do c =1,LIS_rc%obs_lnc(k)
            if(swot_wl_struc(n)%lisid(c,r).gt.0) then
+              candidate_count = 0
+              min_candidate_wse = huge(0.0)
+              max_candidate_wse = -huge(0.0)
               do t=1, swot_wl_struc(n)%ntimes
-                 if((swot_wl_struc(n)%time(swot_wl_struc(n)%lisid(c,r),t) >= time_start) &
-                    .and. (swot_wl_struc(n)%time(swot_wl_struc(n)%lisid(c,r),t) <= time_end)) then
+                 obs_time = swot_wl_struc(n)%time(swot_wl_struc(n)%lisid(c,r),t)
+                 if((obs_time >= real(time_start,kind=swot_time_kind)) &
+                    .and. (obs_time < real(time_end,kind=swot_time_kind))) then
                     wlobs(c,r) = swot_wl_struc(n)%WLobs(swot_wl_struc(n)%lisid(c,r),t)
 
                     if(wlobs(c,r).gt.0) then
+                       candidate_count = candidate_count + 1
+                       min_candidate_wse = min(min_candidate_wse,wlobs(c,r))
+                       max_candidate_wse = max(max_candidate_wse,wlobs(c,r))
                        fnd = 1
                     endif
                  endif
               enddo
+              if(candidate_count.gt.1) then
+                 write(LIS_logunit,*) '[WARN] Multiple SWOT candidates; last file index retained. ' , &
+                      'UTC cycle, cell, count, WSE range: ',yyyy,mm,dd,hh,mn,ss, &
+                      swot_wl_struc(n)%lisid(c,r),candidate_count,min_candidate_wse,max_candidate_wse
+              endif
            endif
         enddo
      enddo
@@ -246,7 +267,7 @@ contains
      implicit none
      character(len=LIS_CONST_PATH_LEN), intent(in) :: filename
      integer                                       :: dim1Id, dim2Id, tId, wlId
-     integer                                       :: ftn
+     integer                                       :: ftn, time_type
 
      call LIS_verify(nf90_open(path=trim(filename),mode=NF90_NOWRITE,ncid=ftn),&
           'Error opening file '//trim(filename))
@@ -267,6 +288,11 @@ contains
      allocate(swot_wl_struc(n)%WLobs(swot_wl_struc(n)%nlisgrids,swot_wl_struc(n)%ntimes))
 
      call LIS_verify(nf90_inq_varid(ftn,'time',tId),'Error with nf90_iniq_varid: time')
+     call LIS_verify(nf90_inquire_variable(ftn,tId,xtype=time_type), &
+          'Error with nf90_inquire_variable: time')
+     if(time_type.eq.nf90_float) then
+        write(LIS_logunit,*) '[WARN] SWOT time is float32; regenerate float64 times from QC checkpoint.'
+     endif
      call LIS_verify(nf90_get_var(ftn,tId,swot_wl_struc(n)%time),'Error with nf90_get_var: time')
 
      call LIS_verify(nf90_inq_varid(ftn,'wse',wlId),'Error with nf90_inq_varid: wse')
@@ -326,4 +352,3 @@ contains
    end function days_in_month
 
 end subroutine read_swotWLobs
-
