@@ -36,13 +36,15 @@ module swotWLobs_module
 ! !PUBLIC TYPES:
 !-----------------------------------------------------------------------------
   PUBLIC :: swot_wl_struc
+  integer, parameter, public :: swot_time_kind = selected_real_kind(15, 307)
 
   type, public :: swot_wl_dec
      type(ESMF_TimeInterval) :: ts
      integer                 :: nlisgrids
      integer                 :: ntimes
-     logical                 :: readflag
-     real,   allocatable     :: time(:,:)
+     logical                 :: readflag = .false.
+     ! Absolute seconds since 2000 need double precision (R4 spacing is 64 s in 2024).
+     real(kind=swot_time_kind), allocatable :: time(:,:)
      real,   allocatable     :: WLobs(:,:)
      integer,allocatable     :: lisid(:,:)
 
@@ -53,7 +55,7 @@ module swotWLobs_module
 
      integer                 :: nt
      real                    :: daInterval
-     integer                 :: time_file
+     integer                 :: time_file = -1
   end type swot_wl_dec
   type(swot_wl_dec), allocatable :: swot_wl_struc(:)
 contains

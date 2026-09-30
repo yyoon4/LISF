@@ -1,0 +1,80 @@
+= SWOT observation time selection fix
+
+This experiment branch builds on `experiment/ohio-hymap3-sfcelv-initfix`.
+It retains the H3 kinematic sfcelv correction and ensemble initialization fix.
+
+== Problem and behavior
+
+SWOT times are absolute seconds since 2000. Default real precision has a
+64-second spacing for 2023--2025. Converting integer cycle bounds to that
+precision, together with inclusive bounds at both ends, can select one
+observation in two adjacent 15-minute cycles.
+
+The reader now stores observation time in a kind with at least 15 decimal
+ digits, explicitly converts cycle bounds to that kind, and selects
+`time_now <= obs_time < time_now + daInterval`.
+The existing forward, interval-start selection convention is preserved.
+SMAP NRT and SMAP enhanced OPL also use an interval with an excluded upper
+bound; SMOS L2 uses a preceding interval. These readers do not establish a
+single universal timestamp convention for all LIS products. DAOBS writer
+names use LIS_rc's current clock; ROUTING output labeling alone cannot
+establish the interval represented by a DAOBS file.
+
+The daily-file loaded state is initialized. A first call at a mid-day
+restart loads that day's input, and a missing new-day input disables
+selection rather than retaining the old day's cache. A failed attempt is
+not repeated every model step unless the daily read alarm rings.
+
+WSE, observation errors, HyMAP bathymetry QC, and the existing multiple-input
+selection policy are preserved. More than one positive WSE in a cell/window
+now produces a warning containing the cycle, cell, candidate count and WSE
+range. The last matching file index is still retained. The intended input
+contract is one representative value per cell/15-minute window, aggregated
+by the upstream QC/mapping workflow.
+
+== Input requirement
+
+Write the NetCDF `time` variable as `f8`, from the original float64 seconds
+in the final QC checkpoint. Reading an old `f4` file into double precision
+prevents rounded cycle-bound comparisons but cannot recover the original
+observation time. Such files remain readable with a warning.
+
+Do not rerun QC merely to repair time precision. Restore the time field from
+the same checkpoint and verify that all non-time values and masks are
+identical. Preserve fractional seconds where present. Do not change the
+DA interval, window orientation, WSE aggregation or uncertainty assumptions
+in the same diagnostic experiment.
+
+== Local numerical validation
+
+* The unmodified R4, closed-window selection reproduces every active-grid
+  extracted C/D DAOBS value exactly at float32 precision.
+* Rebuilt f8 inputs preserve every non-time value and mask in 312 C daily
+  files (24,897 source records) and 317 D files (28,427 source records).
+* Full-period f8 half-open selection replay has zero source observations
+  selected twice, zero windows with multiple candidates, and zero input
+  records lost to the file-index selection.
+* With the supplied Ohio LANDMASK, expected basin pre-EnKF counts are
+  C 17,431 and D 19,818. These are numerical selection expectations, not
+  new LIS execution results. They assume the same observation-domain and
+  model bathymetry QC settings.
+* Exact-boundary/subsecond cases, day-expiry/loaded-state predicates, and
+  application of the standalone patch to its base sources were checked.
+
+A complete LIS build and ESMF/NetCDF integration execution have not been
+performed locally. Build on Discover with the established LIS environment,
+then test representative cycles and a day transition before the full run.
+
+== Suggested Discover validation
+
+Use the same model restart, forcing, ensemble perturbations and 15-minute
+DA settings. Write results to fresh paths. First test 2023-12-07 (C repeated
+boundary), 2024-01-19 and 2024-03-22 (D former input collisions), plus a midnight
+transition and restart. All source observations should enter only one
+cycle; the two D boundary observations should fall in separate cycles.
+
+Inspect DAOBS and EnKF logs/analysis increments to establish actual update
+behavior. After passing this check, use the patched shared reader for both
+H2 and H3 and the corresponding f8 inputs for all eight C/D DA/LZN runs.
+An OL regression smoke check should have identical streamflow because the
+SWOT reader does not supply updates to an OL run.
