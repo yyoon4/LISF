@@ -2097,6 +2097,15 @@ USAFSI netcdf filename prefix:         usafsi
 [[sssec_snipda,SNIP Assimilation]]
 ==== SNIP Assimilation
 
+SNIP snow-depth assimilation is supported with NoahMP.5.0 using the
+same DA state variables as NoahMP.4.0.1: SWE in millimeters and
+Snowdepth in meters. Select `Land surface model: "Noah-MP.5.0"`
+and `Data assimilation set: "SNIP"` for the
+SNIP DA instance. The SNIP observation operator returns snow depth in
+meters; no additional unit conversion is applied by the model interface.
+The NoahMP.5.0 interface reuses its existing USAFSI snow-state update
+and snow-layer physics.
+
 `SNIP data directory:` specifies the directory for the
 SNIP data.
 
