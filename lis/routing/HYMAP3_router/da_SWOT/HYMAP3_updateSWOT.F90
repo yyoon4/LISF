@@ -113,12 +113,7 @@ subroutine HYMAP3_updateSWOT(n, Routing_State, Routing_Incr_State)
               siteid = HYMAP3_daSWOT_struc(n)%sites(ix,iy)
               if(siteid.ne.-9999.0) then
                  localweight(:,:) = &
-                      HYMAP3_daSWOT_struc(n)%localWeight(&
-                      LIS_ews_halo_ind(n,LIS_localPet+1):&
-                      LIS_ewe_halo_ind(n,LIS_localPet+1), &
-                      LIS_nss_halo_ind(n,LIS_localPet+1):&
-                      LIS_nse_halo_ind(n,LIS_localPet+1), &
-                      siteid)
+                      HYMAP3_daSWOT_struc(n)%localWeight(:,:,siteid)
 
                  c1=max(1,ix-HYMAP3_daSWOT_struc(n)%localupdDX)
                  c2=min(LIS_rc%lnc(n),ix+HYMAP3_daSWOT_struc(n)%localupdDX)
