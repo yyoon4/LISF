@@ -164,15 +164,20 @@ contains
                 status = nf90_inq_varid(nid,'sites',sid)
                 call LIS_verify(status, &
                      'sites field not found in the localization weight file')
+                ! Keep only this MPI rank's halo-inclusive localization weights.
                 allocate(HYMAP3_daSWOT_struc(n)%localWeight(&
-                     LIS_rc%gnc(n), LIS_rc%gnr(n), &
+                     LIS_rc%lnc(n), LIS_rc%lnr(n), &
                      HYMAP3_daSWOT_struc(n)%nsites))
 
                 allocate(HYMAP3_daSWOT_struc(n)%sites( &
                      LIS_rc%lnc(n), LIS_rc%lnr(n)))
 
                 status = nf90_get_var(nid,drainid,&
-                     HYMAP3_daSWOT_struc(n)%localWeight)
+                     HYMAP3_daSWOT_struc(n)%localWeight, &
+                     start=(/LIS_ews_halo_ind(n,LIS_localPet+1), &
+                     LIS_nss_halo_ind(n,LIS_localPet+1),1/), &
+                     count=(/LIS_rc%lnc(n),LIS_rc%lnr(n), &
+                     HYMAP3_daSWOT_struc(n)%nsites/))
                 call LIS_verify(status, &
                      'Error in nf90_get_var in HYMAP3_daSWOT_Mod')
 
