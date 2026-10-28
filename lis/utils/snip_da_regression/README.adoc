@@ -125,3 +125,23 @@ Return the following from the same new run:
 Do not label the patch runtime-validated before both the server unit tests and
 full LIS integration run pass. The development Mac was used for source/static
 checks and a separate numerical design check, not Fortran compilation.
+
+== Trace-target QC follow-up
+
+Before calculating increments, the setter normalizes depth to zero ONLY when
+old depth = 0, old SWE = 0, target SWE = 0, and 0 < target depth < 0.00254 m.
+This strict boundary matches the existing SNIP map threshold. Positive target
+SWE, existing snow, and targets at or above the boundary are untouched. No
+new-snow density is invented. Other inconsistent targets still fail explicitly.
+The targets in the state vector are normalized before conservation checks.
+
+`SNIP_TRACE_SNOW_QC` records nest, local call counter, normalized count and
+maximum discarded depth (m). Up to three `SNIP_TRACE_SNOW_QC_SAMPLE` entries
+per setter call/rank retain tile coordinates and original depth. Keep these
+logs even if a later, unrelated target fails.
+
+Nine additional native QC checks cover the reported 0.00020394144 m case,
+the adjacent float below the threshold, the exact boundary, larger depth,
+positive SWE, existing snow, zero, negative depth and NaN. Successful valid
+runs now also print `SNIP_QC_PASS 9`; the existing 1114 remapping cases remain.
+These additional Fortran checks must be compiled/run on the server.

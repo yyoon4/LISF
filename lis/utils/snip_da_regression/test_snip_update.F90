@@ -2,7 +2,7 @@ program test_snip_update
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
   use NoahMP50_lsmMod
   implicit none
-  external :: noahmp50_snip_update
+  external :: noahmp50_snip_update, noahmp50_snip_qc_target
   integer :: i, j, k, cases
   real :: h, s, oldh, olds, mass, depth, temp0(3), ice0(3), liq0(3), z0(7)
   real :: soil_t(4), soil_w(4), soil_s(4)
@@ -26,6 +26,17 @@ program test_snip_update
      end select
      error stop 'Invalid target was accepted'
   endif
+
+  call check_trace(0.,0.,2.0394144e-4,0.,.true.)
+  call check_trace(0.,0.,nearest(2.54e-3,-1.),0.,.true.)
+  call check_trace(0.,0.,2.54e-3,0.,.false.)
+  call check_trace(0.,0.,.01,0.,.false.)
+  call check_trace(0.,0.,2.0394144e-4,.01,.false.)
+  call check_trace(.01,2.,2.0394144e-4,0.,.false.)
+  call check_trace(0.,0.,0.,0.,.false.)
+  call check_trace(0.,0.,-1.e-4,0.,.false.)
+  call check_trace(0.,0.,ieee_value(0.,ieee_quiet_nan),0.,.false.)
+  write(*,'(a)') 'SNIP_QC_PASS 9'
 
   ! Original counterexamples, thresholds, increase and complete snow removal.
   do i=1,size(targets)
@@ -102,6 +113,27 @@ program test_snip_update
   write(*,'(a,1x,i0)') 'SNIP_UNIT_PASS',cases
 
 contains
+  subroutine check_trace(old_depth,old_swe,raw_depth,goal_swe,expected)
+    real, intent(in) :: old_depth, old_swe, raw_depth, goal_swe
+    logical, intent(in) :: expected
+    real :: goal_depth
+    logical :: normalized
+    goal_depth=raw_depth
+    call noahmp50_snip_qc_target(old_depth,old_swe,goal_depth,goal_swe,normalized)
+    call require(normalized.eqv.expected,'trace QC classification')
+    if(expected) then
+       call require(goal_depth==0.,'trace QC zero depth')
+       ! Reproduce the setter sequence: normalized state -> increments -> update.
+       call initial(0,.false.)
+       call noahmp50_snip_update(1,1,goal_swe,goal_depth)
+       call require(Noahmp50_struc(1)%noahmp50(1)%snowh==0.,'trace update depth')
+       call require(Noahmp50_struc(1)%noahmp50(1)%sneqv==0.,'trace update SWE')
+    elseif(ieee_is_finite(raw_depth)) then
+       call require(goal_depth==raw_depth,'non-trace target unchanged')
+    else
+       call require(.not.ieee_is_finite(goal_depth),'invalid target not masked')
+    endif
+  end subroutine
   subroutine require(condition,label)
     logical, intent(in) :: condition
     character(len=*), intent(in) :: label

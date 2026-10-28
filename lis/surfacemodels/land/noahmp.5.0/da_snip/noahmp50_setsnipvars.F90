@@ -55,7 +55,11 @@ subroutine noahmp50_setsnipvars(n, LSM_State)
   real                   :: old_h, old_s, dh, ds, dm, dz, htol, stol
   real                   :: max_dh, max_ds, max_dm, max_dz
 
-  external :: noahmp50_snip_update
+  integer                :: trace_normalized
+  real                   :: trace_depth, max_trace_depth
+  logical                :: normalized
+
+  external :: noahmp50_snip_update, noahmp50_snip_qc_target
 
   call ESMF_StateGet(LSM_State, "SWE", sweField, rc=status)
   call LIS_verify(status)
@@ -68,6 +72,8 @@ subroutine noahmp50_setsnipvars(n, LSM_State)
   call LIS_verify(status)
 
   check_call = check_call + 1
+  trace_normalized = 0
+  max_trace_depth = 0.0
   changed = 0
   reduced = 0
   layer_changes = 0
@@ -86,6 +92,20 @@ subroutine noahmp50_setsnipvars(n, LSM_State)
      old_h = noahmp50_struc(n)%noahmp50(t)%snowh
      old_s = noahmp50_struc(n)%noahmp50(t)%sneqv
      old_isnow = noahmp50_struc(n)%noahmp50(t)%isnow
+
+     ! QC the state targets before computing increments. Do not change
+     ! positive SWE, existing snow, or depths at/above the trace threshold.
+     trace_depth = snod(t)
+     call noahmp50_snip_qc_target(old_h, old_s, snod(t), swe(t), normalized)
+     if (normalized) then
+        trace_normalized = trace_normalized + 1
+        max_trace_depth = max(max_trace_depth, trace_depth)
+        if (trace_normalized <= 3) write(LIS_logunit,*) &
+             'SNIP_TRACE_SNOW_QC_SAMPLE nest/tile/col/row=', n, t, &
+             LIS_surface(n,LIS_rc%lsm_index)%tile(t)%col, &
+             LIS_surface(n,LIS_rc%lsm_index)%tile(t)%row, &
+             ' raw_depth_m=', trace_depth, ' normalized_depth_m=0 SWE=0'
+     endif
 
      dsneqv = swe(t) - noahmp50_struc(n)%noahmp50(t)%sneqv   !in mm
      dsnowh = snod(t) - noahmp50_struc(n)%noahmp50(t)%snowh  !in m
@@ -124,6 +144,8 @@ subroutine noahmp50_setsnipvars(n, LSM_State)
 
   enddo
 
+  write(LIS_logunit,'(a,3(1x,i0),1x,es16.8)') 'SNIP_TRACE_SNOW_QC', &
+       n, check_call, trace_normalized, max_trace_depth
   write(LIS_logunit,'(a,7(1x,i0),4(1x,es16.8))') 'SNIP_TARGET_CHECK', &
        n, check_call, LIS_rc%npatch(n,LIS_rc%lsm_index), changed, reduced, layer_changes, failed, &
        max_dh, max_ds, max_dm, max_dz
