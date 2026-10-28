@@ -1,0 +1,127 @@
+= Noah-MP 5.0 SNIP target-conservation regression
+
+This utility tests the production `noahmp50_snip_update.F90` using small synthetic
+states. It is not a full LIS run and needs no ESMF, NetCDF, MPI, or forcing data.
+A Fortran compiler must already be available on the server; the runner installs
+nothing. The production `NoahMP50_snowphys_updateMod.F90` is compiled unchanged.
+Only the model data containers and LIS logging are stubbed.
+
+== Mapping policy
+
+SNIP applies its own state update instead of calling the USAFSI updater.
+For an existing layered snowpack, thicknesses are scaled to the depth target,
+and ice/liquid masses are independently scaled to the SWE target. This preserves
+relative profiles and liquid fraction before conservative layer merging/splitting.
+`Combo` and `Divide` are shared Noah-MP geometric helpers; the USAFSI update is
+not called. Layer redistribution is not an additional forecast time step.
+
+* No additional compaction, liquid drainage, or hardcoded glacier mass cap is
+  applied by the SNIP setter. These remain normal model/QC responsibilities.
+* Depth below 0.025 m uses Noah-MP's aggregate, unlayered snow representation.
+  Its total SWE is retained, but there is no separate thin-snow liquid/temperature
+  profile in this representation.
+* New explicit snow is initialized as ice at `min(273.16, sfctmp)`, following the
+  existing snowfall initialization convention.
+* A zero increment leaves the entire state unchanged.
+* Negative/non-finite targets and one-zero/one-positive depth/SWE targets abort
+  with `SNIP_UPDATE` diagnostics. No density is invented to override QC targets.
+  If this reveals a QC problem (for example positive depth with zero SWE over
+  initially snow-free ground), return the log; this change does not alter QC.
+* Soil water and temperature are unchanged. Soil coordinates are shifted below
+  the reconstructed snow column.
+
+This is a proportional analysis redistribution, not a physical removal of only
+the top snow. It deliberately avoids treating an analysis increment as melt,
+runoff or elapsed compaction. Subsequent forecast output may differ from the
+immediate analysis target because normal physics continues to evolve the snow.
+
+== Compile and run the isolated tests on the server
+
+From the repository root, after loading the existing compiler environment:
+
+[source,bash]
+----
+FC=gfortran python3 lis/utils/snip_da_regression/run_tests.py --output snip-unit-results
+----
+
+For Intel, use `FC=ifx` or `FC=ifort`. `FFLAGS` can override the debug flags.
+The output directory must not already exist. There are 1114 valid-target cases
+and three expected-rejection runs (negative, inconsistent and non-finite targets).
+The runner compiles and executes the actual modified Fortran. The checks include
+layer/depth/mass consistency, independent increments, wet snow, thresholds,
+no-op identity, new/removed snow, temperatures and unchanged soil states.
+
+A successful run produces `unit_results.json` with `status: passed` and
+`valid_targets.log` with `SNIP_UNIT_PASS 1114`. A failure produces logs and a
+nonzero process exit code. Keep the compiler banner, compile log, all test logs
+and JSON. The isolated test does not compile the ESMF-facing setter; the full
+LIS build and short run below are also required.
+
+== Build and run LIS using the existing server setup
+
+Use a separate checkout/build and a new output directory. Initialize the
+Noah-MP submodule (`git submodule update --init --recursive`), load the same
+compiler/MPI/ESMF/NetCDF environment used by the baseline, and configure/build
+LIS with the site's usual `lis/configure` and `lis/compile` procedure.
+Do not overwrite the baseline executable or results.
+
+For the short comparison, retain the baseline initial restart, forcing,
+observations, perturbation configuration/random state, start/end dates, process
+layout and 12 members. Prefer the same realization of perturbations when
+comparing runs. Record any difference; an uncontrolled perturbation change is
+not a clean before/after comparison.
+
+Set `Output methodology: "2d ensemble gridspace"` and retain these diagnostics:
+`SnowDepth`, `SWE`, `ActSnowNL`, `SnowTProf` (3), `SnowIce` (3), `SnowLiq` (3),
+`z_snow` (3). Keep the same 3-hour history interval. The output table already
+prepared for this investigation can be reused.
+
+== Immediate target checks in the real LIS run
+
+`noahmp50_setsnipvars` logs one `SNIP_TARGET_CHECK` summary per setter invocation
+on each rank. The columns are:
+
+----
+nest call patches changed reduced layers_changed failed
+max_depth_error_m max_SWE_error_kgm2 max_layer_mass_error_kgm2 max_layer_depth_error_m
+----
+
+`call` is a local invocation counter, not a timestamp or a globally unique DA
+cycle. A setter invocation may also be associated with state perturbations.
+The comparison is to the state targets passed to the setter, not directly to
+the SNIP observation. Totals are checked for every patch; layer sums are checked
+only when explicit layers exist. A failed check logs the first five tile/column/
+row examples and aborts the run rather than silently accepting a wrong target.
+
+Tolerances are `max(1e-6, 8*epsilon*max(1,old_depth,target_depth))` m and
+`max(1e-4, 8*epsilon*max(1,old_SWE,target_SWE))` kg/m2. The old magnitude is
+included because the existing interface subtracts and re-adds single-precision
+increments. These are numerical tolerances, not physical acceptance thresholds.
+
+After a new run, collect ALL MPI-rank `lislog*` files in its logs directory:
+
+[source,bash]
+----
+python3 lis/utils/snip_da_regression/check_run_logs.py \
+  --logs /path/to/new_run/output/logs \
+  --output snip_target_summary.json
+----
+
+Expected status: `passed_target_mapping_checks`, `failed=0`, and `reduced>0`.
+Missing checks or no reduction coverage are reported as incomplete, not passed.
+These checks do not establish normal end-of-run completion, analysis quality,
+or scientific accuracy; inspect normal LIS completion and model outputs too.
+
+== Return for analysis
+
+Return the following from the same new run:
+
+* `git rev-parse HEAD`, compiler/build logs, and `snip-unit-results/`.
+* `snip_target_summary.json` and ALL rank logs (including errors on failure).
+* The actual `lis.config` and model output table used on the server.
+* All four new ensemble history NetCDF files (15:00, 18:00, 21:00, 00:00).
+* Any change to restart/perturbation inputs or the run setup.
+
+Do not label the patch runtime-validated before both the server unit tests and
+full LIS integration run pass. The development Mac was used for source/static
+checks and a separate numerical design check, not Fortran compilation.
