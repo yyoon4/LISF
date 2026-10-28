@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compile and test the production SNIP updater on a configured server.
+Optional; use the normal LIS build/run for integration validation.
 No packages are installed. Only LIS state containers/logging are stubbed.
-The actual Noah-MP Combo/Divide implementation is compiled unchanged.
+The actual Noah-MP Compact/Combine/Divide implementation is compiled unchanged.
 """
 import argparse
 from datetime import datetime, timezone
@@ -50,7 +51,7 @@ def main():
         return finish('compiler_flags_required', 2)
     sources = [here / 'stubs.F90', lis / 'surfacemodels/land/noahmp.5.0/NoahMP50_snowphys_updateMod.F90',
                lis / 'surfacemodels/land/noahmp.5.0/da_snip/noahmp50_snip_update.F90',
-               lis / 'surfacemodels/land/noahmp.5.0/da_snip/noahmp50_snip_qc_target.F90',
+               lis / 'surfacemodels/land/noahmp.5.0/da_usafsi/noahmp50_usafsi_update.F90',
                here / 'test_snip_update.F90']
     for p in sources:
         result['sources'][str(p.relative_to(lis))] = hashlib.sha256(p.read_bytes()).hexdigest()
@@ -61,17 +62,13 @@ def main():
         compiled = subprocess.run(command, cwd=out, stdout=log, stderr=subprocess.STDOUT)
     if compiled.returncode:
         return finish('compile_failed', 1)
-    jobs = [('', None), ('negative', 'negative analysis target'),
-            ('inconsistent', 'inconsistent depth/SWE targets'), ('nan', 'non-finite snow state or increment')]
-    for argument, expected in jobs:
-        run = subprocess.run([str(executable)] + ([argument] if argument else []),
-                             cwd=out, capture_output=True, text=True)
-        output = run.stdout + run.stderr
-        name = argument or 'valid_targets'
-        (out / (name + '.log')).write_text(output)
-        passed = (run.returncode == 0 and 'SNIP_UNIT_PASS' in output and 'SNIP_QC_PASS 9' in output) if expected is None else (
-            run.returncode != 0 and expected in output)
-        result['tests'].append({'name': name, 'returncode': run.returncode, 'passed': passed})
+    run = subprocess.run([str(executable)], cwd=out, capture_output=True, text=True)
+    output = run.stdout + run.stderr
+    (out / 'legacy_and_reductions.log').write_text(output)
+    passed = (run.returncode == 0 and 'SNIP_UNIT_PASS 147 58' in output
+              and 'SNIP_REDUCTION_MAP_WARN' not in output
+              and 'SNIP_REDUCTION_SKIPPED' not in output)
+    result['tests'].append({'name': 'legacy_and_reductions', 'returncode': run.returncode, 'passed': passed})
     return finish('passed' if all(t['passed'] for t in result['tests']) else 'tests_failed',
                   0 if all(t['passed'] for t in result['tests']) else 1)
 

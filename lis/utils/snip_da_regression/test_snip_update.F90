@@ -1,148 +1,83 @@
 program test_snip_update
-  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use NoahMP50_lsmMod
   implicit none
-  external :: noahmp50_snip_update, noahmp50_snip_qc_target
-  integer :: i, j, k, cases
-  real :: h, s, oldh, olds, mass, depth, temp0(3), ice0(3), liq0(3), z0(7)
-  real :: soil_t(4), soil_w(4), soil_s(4)
-  real, parameter :: targets(21) = (/0., .001, .024, .025, .026, .049, .05, .051, &
-       .099, .1, .249, .25, .251, .4, .8, .95, .98, .999, 1., 1.1, 2./)
-  character(len=64) :: arg
-  cases=0
-  call get_command_argument(1,arg)
-  if (len_trim(arg)>0) then
-     call initial(3, .false.)
-     select case(trim(arg))
-     case('negative')
-        call noahmp50_snip_update(1,1,-301.,-1.1)
-     case('inconsistent')
-        call noahmp50_snip_update(1,1,-300.,-.6)
-     case('nan')
-        h=ieee_value(0.,ieee_quiet_nan)
-        call noahmp50_snip_update(1,1,0.,h)
-     case default
-        error stop 2
-     end select
-     error stop 'Invalid target was accepted'
-  endif
-
-  call check_trace(0.,0.,2.0394144e-4,0.,.true.)
-  call check_trace(0.,0.,nearest(2.54e-3,-1.),0.,.true.)
-  call check_trace(0.,0.,2.54e-3,0.,.false.)
-  call check_trace(0.,0.,.01,0.,.false.)
-  call check_trace(0.,0.,2.0394144e-4,.01,.false.)
-  call check_trace(.01,2.,2.0394144e-4,0.,.false.)
-  call check_trace(0.,0.,0.,0.,.false.)
-  call check_trace(0.,0.,-1.e-4,0.,.false.)
-  call check_trace(0.,0.,ieee_value(0.,ieee_quiet_nan),0.,.false.)
-  write(*,'(a)') 'SNIP_QC_PASS 9'
-
-  ! Original counterexamples, thresholds, increase and complete snow removal.
-  do i=1,size(targets)
+  external :: noahmp50_snip_update, noahmp50_usafsi_update
+  integer :: i,j,k,cases,legacy_cases
+  real :: h,s,a,b
+  real, parameter :: fractions(9) = (/0.,.1,.25,.4,.75,.8,.95,.98,.999/)
+  real, parameter :: reported(3) = (/2.0394144e-4,1.87592127e-3,7.3130843e-3/)
+  real :: temp0(3),ice0(3),liq0(3)
+  cases=0;legacy_cases=0
+  ! Compare every non-reduction path with the actual original updater.
+  do k=0,1
+     Noahmp50_struc(1)%ts=1800.*real(k)
      do j=0,1
-        call initial(3,j==1)
-        call apply_and_check(targets(i),300.*targets(i))
+        do i=0,3
+           call initial(i,j==1)
+           call compare_legacy(0.,0.)
+           call compare_legacy(3.,.01)
+           call compare_legacy(0.,.01)
+           call compare_legacy(3.,0.)
+           call compare_legacy(-3.,.01)
+           call compare_legacy(3.,-.01)
+           call compare_legacy(0.,-.01)
+           call compare_legacy(-3.,0.)
+           call compare_legacy(-400.,-2.)
+        enddo
      enddo
   enddo
-  ! One/two-layer inputs and layers created from thin/no snow.
-  do j=0,2
-     do i=1,size(targets)
-        call initial(j,.false.)
-        call apply_and_check(targets(i),200.*targets(i))
+  ! Exact reported inputs: no abort, no new SWE or depth.
+  do i=1,size(reported)
+     call initial(0,.false.)
+     call compare_legacy(0.,reported(i))
+     a=0.;b=reported(i)
+     call noahmp50_snip_update(1,1,a,b)
+     call require(Noahmp50_struc(1)%noahmp50(1)%snowh==0.,'reported depth ignored as before')
+     call require(Noahmp50_struc(1)%noahmp50(1)%sneqv==0.,'no invented SWE')
+  enddo
+  ! Dry dt=0 isolates mapping; dt=1800 retains the old compaction.
+  do k=0,1
+     Noahmp50_struc(1)%ts=1800.*real(k)
+     do j=1,3
+        do i=1,size(fractions)
+           call initial(j,.false.)
+           h=Noahmp50_struc(1)%noahmp50(1)%snowh*fractions(i)
+           s=Noahmp50_struc(1)%noahmp50(1)%sneqv*fractions(i)
+           call reduction(h,s,k==0,.false.)
+        enddo
      enddo
   enddo
+  Noahmp50_struc(1)%ts=0.
+  call initial(3,.false.)
+  call reduction(.8,210.,.true.,.false.)
+  call initial(3,.true.)
+  temp0=Noahmp50_struc(1)%noahmp50(1)%tsno
+  ice0=Noahmp50_struc(1)%noahmp50(1)%snowice
+  liq0=Noahmp50_struc(1)%noahmp50(1)%snowliq
+  call reduction(.98,294.,.true.,.false.)
+  call require(all(temp0==Noahmp50_struc(1)%noahmp50(1)%tsno),'retained temperature')
+  call require(maxval(abs(.98*ice0-Noahmp50_struc(1)%noahmp50(1)%snowice))<1.e-4,'ice scaling')
+  call require(maxval(abs(.98*liq0-Noahmp50_struc(1)%noahmp50(1)%snowliq))<1.e-5,'liquid scaling')
   call initial(0,.false.)
   Noahmp50_struc(1)%noahmp50(1)%snowh=.01
-  Noahmp50_struc(1)%noahmp50(1)%sneqv=2.
-  Noahmp50_struc(1)%noahmp50(1)%sfctmp=280.
-  call apply_and_check(.3,60.)
-  call require(maxval(Noahmp50_struc(1)%noahmp50(1)%tsno)<=273.161,'new snow temperature')
-
-  ! Independent depth/SWE targets (opposite signs and zero increments).
+  Noahmp50_struc(1)%noahmp50(1)%sneqv=3.
+  call reduction(.005,1.5,.true.,.false.)
+  ! Wet thin snow retains Combine's existing liquid drainage convention.
+  Noahmp50_struc(1)%ts=1800.
   call initial(3,.true.)
-  call apply_and_check(.8,330.)
-  call initial(3,.true.)
-  call apply_and_check(1.2,240.)
-  call initial(3,.true.)
-  call apply_and_check(1.,240.)
-  call initial(3,.true.)
-  call apply_and_check(.8,300.)
-
-  ! Identity operation must not compact, rebuild or alter soil/snow states.
-  call initial(3,.true.)
-  z0=Noahmp50_struc(1)%noahmp50(1)%zss
-  temp0=Noahmp50_struc(1)%noahmp50(1)%tsno
-  ice0=Noahmp50_struc(1)%noahmp50(1)%snowice
-  liq0=Noahmp50_struc(1)%noahmp50(1)%snowliq
-  call apply_and_check(1.,300.)
-  call require(all(z0==Noahmp50_struc(1)%noahmp50(1)%zss),'no-op geometry')
-  call require(all(temp0==Noahmp50_struc(1)%noahmp50(1)%tsno),'no-op temperature')
-  call require(all(ice0==Noahmp50_struc(1)%noahmp50(1)%snowice),'no-op ice')
-  call require(all(liq0==Noahmp50_struc(1)%noahmp50(1)%snowliq),'no-op liquid')
-
-  ! A small reduction keeps all three valid layers and their temperatures.
-  call initial(3,.true.)
-  temp0=Noahmp50_struc(1)%noahmp50(1)%tsno
-  ice0=Noahmp50_struc(1)%noahmp50(1)%snowice
-  liq0=Noahmp50_struc(1)%noahmp50(1)%snowliq
-  call apply_and_check(.98,294.)
-  call require(all(temp0==Noahmp50_struc(1)%noahmp50(1)%tsno),'retained temperature profile')
-  call require(maxval(abs(Noahmp50_struc(1)%noahmp50(1)%snowice-.98*ice0))<1.e-4,'ice scaling')
-  call require(maxval(abs(Noahmp50_struc(1)%noahmp50(1)%snowliq-.98*liq0))<1.e-5,'liquid scaling')
-
-  ! No hidden 5000 mm glacier cap in the analysis mapping.
-  call initial(3,.false.)
-  call apply_and_check(20.,6000.)
-
-  ! A nearly ice-free layer must merge without draining analysis liquid water.
-  call initial(3,.true.)
-  Noahmp50_struc(1)%noahmp50(1)%snowice(1)=0.01
-  Noahmp50_struc(1)%noahmp50(1)%snowliq(1)=14.99
-  call apply_and_check(.4,120.)
-  call require(abs(sum(Noahmp50_struc(1)%noahmp50(1)%snowliq)-.4*19.99)<1.e-4,'wet merge liquid')
-
-  ! Deterministic spread of depth/mass ratios and initial layer counts.
-  do i=1,1000
-     j=mod(i,4)
-     call initial(j,mod(i,2)==0)
-     h=.0005+real(mod(37*i,2001))/1000.
-     s=h*(50.+real(mod(53*i,451)))
-     call apply_and_check(h,s)
-  enddo
-  write(*,'(a,1x,i0)') 'SNIP_UNIT_PASS',cases
-
+  call reduction(.01,3.,.false.,.true.)
+  call require(abs(Noahmp50_struc(1)%noahmp50(1)%sneqv-2.94)<1.e-4,'legacy thin-snow ice total')
+  write(*,'(a,2(1x,i0))') 'SNIP_UNIT_PASS',legacy_cases,cases
 contains
-  subroutine check_trace(old_depth,old_swe,raw_depth,goal_swe,expected)
-    real, intent(in) :: old_depth, old_swe, raw_depth, goal_swe
-    logical, intent(in) :: expected
-    real :: goal_depth
-    logical :: normalized
-    goal_depth=raw_depth
-    call noahmp50_snip_qc_target(old_depth,old_swe,goal_depth,goal_swe,normalized)
-    call require(normalized.eqv.expected,'trace QC classification')
-    if(expected) then
-       call require(goal_depth==0.,'trace QC zero depth')
-       ! Reproduce the setter sequence: normalized state -> increments -> update.
-       call initial(0,.false.)
-       call noahmp50_snip_update(1,1,goal_swe,goal_depth)
-       call require(Noahmp50_struc(1)%noahmp50(1)%snowh==0.,'trace update depth')
-       call require(Noahmp50_struc(1)%noahmp50(1)%sneqv==0.,'trace update SWE')
-    elseif(ieee_is_finite(raw_depth)) then
-       call require(goal_depth==raw_depth,'non-trace target unchanged')
-    else
-       call require(.not.ieee_is_finite(goal_depth),'invalid target not masked')
-    endif
-  end subroutine
   subroutine require(condition,label)
     logical, intent(in) :: condition
     character(len=*), intent(in) :: label
     if (.not.condition) then
-       write(*,*) 'SNIP_UNIT_FAIL case=',cases,' ',trim(label)
+       write(*,*) 'SNIP_UNIT_FAIL ',trim(label)
        error stop 1
     endif
   end subroutine
-
   subroutine initial(nlayers,wet)
     integer, intent(in) :: nlayers
     logical, intent(in) :: wet
@@ -185,62 +120,66 @@ contains
     enddo
   end subroutine
 
-  subroutine apply_and_check(goal_h,goal_s)
-    real, intent(in) :: goal_h, goal_s
-    real :: dh, ds, ht, st, expected_z, liq_before, total_before, next_h
-    integer :: count_layers, first, ii
+  subroutine compare_legacy(delta_s,delta_h)
+    real, intent(in) :: delta_s,delta_h
+    real :: aa,bb
+    type(tile_type) :: before,expected,actual
+    before=Noahmp50_struc(1)%noahmp50(1)
+    aa=delta_s;bb=delta_h
+    call noahmp50_usafsi_update(1,1,aa,bb)
+    expected=Noahmp50_struc(1)%noahmp50(1)
+    Noahmp50_struc(1)%noahmp50(1)=before
+    aa=delta_s;bb=delta_h
+    call noahmp50_snip_update(1,1,aa,bb)
+    actual=Noahmp50_struc(1)%noahmp50(1)
+    call require(actual%isnow==expected%isnow,'legacy layer count')
+    call require(actual%snowh==expected%snowh,'legacy depth')
+    call require(actual%sneqv==expected%sneqv,'legacy SWE')
+    call require(all(actual%snowice==expected%snowice),'legacy ice')
+    call require(all(actual%snowliq==expected%snowliq),'legacy liquid')
+    call require(all(actual%tsno==expected%tsno),'legacy snow temperature')
+    call require(all(actual%zss==expected%zss),'legacy coordinates')
+    call require(all(actual%tslb==expected%tslb),'legacy soil temperature')
+    call require(all(actual%sh2o==expected%sh2o),'legacy soil water')
+    call require(all(actual%smc==expected%smc),'legacy soil moisture')
+    Noahmp50_struc(1)%noahmp50(1)=before
+    legacy_cases=legacy_cases+1
+  end subroutine
+  subroutine reduction(goal_h,goal_s,check_depth,allow_drainage)
+    real, intent(in) :: goal_h,goal_s
+    logical, intent(in) :: check_depth,allow_drainage
+    real :: aa,bb,ht,st,depth
+    integer :: first,ii
+    ht=max(1.e-6,8.*epsilon(goal_h)*max(1.,Noahmp50_struc(1)%noahmp50(1)%snowh))
+    st=max(1.e-4,8.*epsilon(goal_s)*max(1.,Noahmp50_struc(1)%noahmp50(1)%sneqv))
+    aa=goal_s-Noahmp50_struc(1)%noahmp50(1)%sneqv
+    bb=goal_h-Noahmp50_struc(1)%noahmp50(1)%snowh
+    call noahmp50_snip_update(1,1,aa,bb)
+    associate(q=>Noahmp50_struc(1)%noahmp50(1))
+      call require(ieee_is_finite(q%snowh).and.ieee_is_finite(q%sneqv),'finite totals')
+      call require(q%snowh>=0..and.q%sneqv>=0.,'nonnegative totals')
+      if(check_depth) call require(abs(q%snowh-goal_h)<=ht,'dry dt=0 target depth')
+      if(.not.allow_drainage) call require(abs(q%sneqv-goal_s)<=st,'target SWE')
+      call require(q%isnow>=-3.and.q%isnow<=0,'layer count bounds')
+      first=4+q%isnow
+      depth=0.
+      do ii=1,3
+         if(ii<first) then
+            call require(q%snowice(ii)==0..and.q%snowliq(ii)==0.,'inactive mass')
+            call require(q%tsno(ii)==0..and.q%zss(ii)==0.,'inactive temperature/depth')
+         else
+            call require(q%snowice(ii)>=0..and.q%snowliq(ii)>=0.,'active mass')
+            call require(ieee_is_finite(q%tsno(ii)),'finite temperature')
+            call require(q%tsno(ii)>150..and.q%tsno(ii)<=273.17,'active temperature range')
+            call require(-q%zss(ii)>depth,'positive layer thickness')
+            depth=-q%zss(ii)
+         endif
+      enddo
+      if(q%isnow<0) then
+         call require(abs(depth-q%snowh)<=ht,'depth agrees with layers')
+         call require(abs(sum(q%snowice)+sum(q%snowliq)-q%sneqv)<=st,'SWE agrees with layers')
+      endif
+    end associate
     cases=cases+1
-    oldh=Noahmp50_struc(1)%noahmp50(1)%snowh
-    olds=Noahmp50_struc(1)%noahmp50(1)%sneqv
-    soil_t=Noahmp50_struc(1)%noahmp50(1)%tslb
-    soil_w=Noahmp50_struc(1)%noahmp50(1)%sh2o
-    soil_s=Noahmp50_struc(1)%noahmp50(1)%smc
-    liq_before=sum(Noahmp50_struc(1)%noahmp50(1)%snowliq)
-    total_before=sum(Noahmp50_struc(1)%noahmp50(1)%snowice)+liq_before
-    dh=goal_h-oldh;ds=goal_s-olds
-    ! Threshold classification follows the representable increment target.
-    next_h=oldh+dh
-    call noahmp50_snip_update(1,1,ds,dh)
-    ht=max(1.e-6,8.*epsilon(h)*max(1.,oldh,goal_h))
-    st=max(1.e-4,8.*epsilon(s)*max(1.,olds,goal_s))
-    call require(abs(Noahmp50_struc(1)%noahmp50(1)%snowh-goal_h)<=ht,'depth target')
-    call require(abs(Noahmp50_struc(1)%noahmp50(1)%sneqv-goal_s)<=st,'SWE target')
-    count_layers=-Noahmp50_struc(1)%noahmp50(1)%isnow
-    call require(count_layers>=0.and.count_layers<=3,'layer count bounds')
-    if(next_h>=.025) call require(count_layers>0,'deep snow has active layers')
-    if(next_h<.025) call require(count_layers==0,'thin snow aggregate representation')
-    first=4-count_layers
-    if(count_layers>0) then
-       mass=sum(Noahmp50_struc(1)%noahmp50(1)%snowice)+sum(Noahmp50_struc(1)%noahmp50(1)%snowliq)
-       call require(abs(mass-goal_s)<=st,'layer mass target')
-       call require(abs(-Noahmp50_struc(1)%noahmp50(1)%zss(3)-goal_h)<=ht,'layer depth target')
-       if(total_before>0.) call require(abs(sum(Noahmp50_struc(1)%noahmp50(1)%snowliq)- &
-            liq_before/total_before*goal_s)<=st,'liquid fraction conserved')
-    endif
-    depth=0.
-    do ii=1,3
-       call require(ieee_is_finite(Noahmp50_struc(1)%noahmp50(1)%tsno(ii)),'finite temperature')
-       if(ii<first) then
-          call require(Noahmp50_struc(1)%noahmp50(1)%snowice(ii)==0.,'inactive ice')
-          call require(Noahmp50_struc(1)%noahmp50(1)%snowliq(ii)==0.,'inactive liquid')
-          call require(Noahmp50_struc(1)%noahmp50(1)%tsno(ii)==0.,'inactive temperature')
-          call require(Noahmp50_struc(1)%noahmp50(1)%zss(ii)==0.,'inactive depth')
-       else
-          call require(Noahmp50_struc(1)%noahmp50(1)%snowice(ii)>=0.,'nonnegative ice')
-          call require(Noahmp50_struc(1)%noahmp50(1)%snowliq(ii)>=0.,'nonnegative liquid')
-          call require(Noahmp50_struc(1)%noahmp50(1)%tsno(ii)>150.,'active temperature')
-          call require(-Noahmp50_struc(1)%noahmp50(1)%zss(ii)>depth,'positive thickness')
-          depth=-Noahmp50_struc(1)%noahmp50(1)%zss(ii)
-       endif
-    enddo
-    expected_z=0.
-    if(count_layers>0) expected_z=Noahmp50_struc(1)%noahmp50(1)%snowh
-    do ii=1,4
-       expected_z=expected_z+Noahmp50_struc(1)%sldpth(ii)
-       call require(abs(-Noahmp50_struc(1)%noahmp50(1)%zss(3+ii)-expected_z)<=ht,'soil geometry')
-    enddo
-    call require(all(soil_t==Noahmp50_struc(1)%noahmp50(1)%tslb),'soil temperature unchanged')
-    call require(all(soil_w==Noahmp50_struc(1)%noahmp50(1)%sh2o),'soil liquid unchanged')
-    call require(all(soil_s==Noahmp50_struc(1)%noahmp50(1)%smc),'soil moisture unchanged')
   end subroutine
 end program

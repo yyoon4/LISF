@@ -9,208 +9,421 @@
 !-------------------------END NOTICE -- DO NOT EDIT-----------------------
 !BOP
 ! !ROUTINE: noahmp50_snip_update
-!
-! !DESCRIPTION:
-!  Apply SNIP analysis increments directly to Noah-MP 5.0 snow states.
-!  Scale layer thickness and water mass independently to the requested
-!  depth and SWE. Preserve relative layer profiles and ice/liquid fractions;
-!  merge/split layers conservatively using Noah-MP geometry thresholds.
-!  This is an analysis mapping, not a model time step: do not compact snow,
-!  drain liquid water, or apply a second glacier cap here. Those processes
-!  belong to the normal model advance (QC has already bounded the targets).
+! \label{noahmp50_snip_update}
 !
 ! !REVISION HISTORY:
-! 19 Oct 2026: Initial SNIP interface.
-! 28 Oct 2026: Independent, target-conserving SNIP state update.
-!EOP
+! 28 Oct 2026: Keep the legacy update; correct SNIP snow reductions locally.
+!  May 2023: Cenlin He; update to work with refactored NoahMP (v5.0 and newer)
+!
+! !INTERFACE
 subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
-  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
-  use NoahMP50_lsmMod, only: Noahmp50_struc
-  use NoahMP50_snowphys_updateMod, only: Divide, Combo
-  use LIS_logMod, only: LIS_logunit, LIS_endrun
+
+! USES:
+  use NoahMP50_lsmMod
+  use NoahMP50_snowphys_updateMod
+  use LIS_logMod, only: LIS_logunit
+
   implicit none
+!
+! !DESCRIPTION:
+!  This subroutine updates relevant snow prognostics based
+!  on the update to the total SWE (dsneqv) and total
+!  snow depth (dsnowh). The updated variables include
+!  number of snow layers, snice, snliq, snow temperature
+!  and snow thickness.
+!
+! !ARGUMENTS:
+  integer, intent(in)  :: n
+  integer, intent(in)  :: t
+  real                 :: dsneqv !mm
+  real                 :: dsnowh !m
 
-  integer, intent(in) :: n, t
-  real, intent(in) :: dsneqv, dsnowh
-  real, parameter :: tfrz = 273.16, thin_depth = 0.025
-  real, parameter :: dzmin(3) = (/0.025, 0.025, 0.1/)
-  integer :: nsnow, nsoil, old_isnow, isnow, nl, i, j, k, neighbor, lower, upper
-  real :: old_h, old_s, target_h, target_s, sum_h, sum_s, depth, htolerance, stolerance
-  real :: dz(3), ice(3), liquid(3), temperature(3)
-  real :: fdz(-2:Noahmp50_struc(n)%nsoil), fstc(-2:Noahmp50_struc(n)%nsoil)
-  real :: fice(-2:0), fliq(-2:0)
-  logical :: merged
+!EOP
+  real, parameter :: tfrz = 273.16    !freezing/melting point (k)
+  real, parameter :: hfus = 0.3336E06 !latent heat of fusion (j/kg)
+  real, parameter :: grav = 9.80616   !acceleration due to gravity (m/s2)
+  real, parameter :: DENH2O = 1000.0  !density of water (kg/m3)
+  real, allocatable, dimension(:) :: zsoil
+  real, allocatable, dimension(:) :: ficeold
+  real, allocatable, dimension(:) :: snice
+  real, allocatable, dimension(:) :: snliq
+  real, allocatable, dimension(:) :: stc
+  real, allocatable, dimension(:) :: supercool
+  real, allocatable, dimension(:) :: mice
+  real, allocatable, dimension(:) :: mliq
+  real, allocatable, dimension(:) :: dzsnso
+  real, allocatable, dimension(:) :: zsnso
+  real, allocatable, dimension(:) :: BEXP
+  real, allocatable, dimension(:) :: PSISAT
+  real, allocatable, dimension(:) :: SMCMAX
 
-  nsnow = Noahmp50_struc(n)%nsnow
+  integer, allocatable, dimension(:) :: imelt  !phase change index
+  real,    allocatable, dimension(:) :: sice
+
+  integer :: snl_idx,i,j,iz
+  integer :: iloc, jloc        ! needed, but not use
+  real    :: smp,sneqv,snowh
+  real    :: sneqv1,snowh1
+  real    :: ponding1,ponding2
+  integer :: newnode
+  integer :: isnow, nsoil, nsnow, soiltype(4), isoil
+
+! local
+  real    :: SNOFLOW, BDSNOW
+
+
+  ! Temporary, non-fatal diagnostics for the reduction mapping only.
+  integer, save :: update_call = 0, sample_count = 0
+  logical :: reduction_applied, report_sample
+  real :: layer_depth, layer_mass, depth_error, mass_error
+  real :: depth_tolerance, mass_tolerance
+
+  if (t == 1) then
+     update_call = update_call + 1
+     sample_count = 0
+  endif
+  reduction_applied = .false.
+  report_sample = .false.
+
+  isnow = Noahmp50_struc(n)%noahmp50(t)%isnow
   nsoil = Noahmp50_struc(n)%nsoil
-  if (nsnow /= 3) call fail('SNIP layer mapping requires nsnow=3')
-  old_isnow = Noahmp50_struc(n)%noahmp50(t)%isnow
-  old_h = Noahmp50_struc(n)%noahmp50(t)%snowh
-  old_s = Noahmp50_struc(n)%noahmp50(t)%sneqv
-  if (.not.all(ieee_is_finite((/old_h, old_s, dsnowh, dsneqv/)))) &
-       call fail('non-finite snow state or increment')
-  target_h = old_h + dsnowh
-  target_s = old_s + dsneqv
-  if (.not.all(ieee_is_finite((/target_h, target_s/)))) call fail('non-finite analysis target')
-  if (old_isnow > 0 .or. old_isnow < -nsnow) call fail('invalid input snow layer count')
-  if (old_h < 0.0 .or. old_s < 0.0) call fail('negative input snow total')
-  if (target_h < 0.0 .or. target_s < 0.0) call fail('negative analysis target')
-  ! A positive thickness with no mass (or vice versa) is not a realizable
-  ! snow analysis. Do not silently replace a QC target or invent a density.
-  if ((target_h == 0.0) .neqv. (target_s == 0.0)) call fail('inconsistent depth/SWE targets')
+  nsnow = Noahmp50_struc(n)%nsnow
 
-  ! A zero update must not perform extra physics or change the vertical state.
-  if (dsnowh == 0.0 .and. dsneqv == 0.0) return
+  allocate(ficeold(-nsnow+1:0))
+  allocate(snice(-nsnow+1:0))
+  allocate(snliq(-nsnow+1:0))
+  allocate(stc(-nsnow+1:nsoil))
+  allocate(imelt(-nsnow+1:nsoil))
+  allocate(supercool(-nsnow+1:nsoil))
+  allocate(mice(-nsnow+1:nsoil))
+  allocate(mliq(-nsnow+1:nsoil))
+  allocate(dzsnso(-nsnow+1:nsoil))
+  allocate(zsnso(-nsnow+1:nsoil))
+  allocate(sice(nsoil))
+  allocate(BEXP(nsoil))
+  allocate(PSISAT(nsoil))
+  allocate(SMCMAX(nsoil))
 
-  dz = 0.0
-  ice = 0.0
-  liquid = 0.0
-  temperature = 0.0
-  fdz = 0.0
-  fstc = 0.0
-  fice = 0.0
-  fliq = 0.0
-  isnow = 0
+  imelt = 0
 
-  if (target_h >= thin_depth) then
-     nl = -old_isnow
-     if (nl > 0) then
-        do i = 1, nl
-           k = nsnow + old_isnow + i
-           if (i == 1) then
-              dz(i) = -Noahmp50_struc(n)%noahmp50(t)%zss(k)
-           else
-              dz(i) = Noahmp50_struc(n)%noahmp50(t)%zss(k-1) - &
-                      Noahmp50_struc(n)%noahmp50(t)%zss(k)
-           endif
-           ice(i) = Noahmp50_struc(n)%noahmp50(t)%snowice(k)
-           liquid(i) = Noahmp50_struc(n)%noahmp50(t)%snowliq(k)
-           temperature(i) = Noahmp50_struc(n)%noahmp50(t)%tsno(k)
-        enddo
-        if (.not.all(ieee_is_finite(dz(1:nl))) .or. &
-            .not.all(ieee_is_finite(ice(1:nl))) .or. &
-            .not.all(ieee_is_finite(liquid(1:nl))) .or. &
-            .not.all(ieee_is_finite(temperature(1:nl)))) call fail('non-finite active layer')
-        if (any(dz(1:nl) <= 0.0) .or. any(ice(1:nl) < 0.0) .or. &
-            any(liquid(1:nl) < 0.0) .or. any(temperature(1:nl) <= 0.0)) &
-            call fail('invalid active layer')
-        sum_h = sum(dz(1:nl))
-        sum_s = sum(ice(1:nl)) + sum(liquid(1:nl))
-        if (sum_s <= 0.0 .or. any(ice(1:nl)+liquid(1:nl) <= 0.0)) &
-             call fail('active snow layer has no water mass')
-        dz(1:nl) = (dz(1:nl)/sum_h)*target_h
-        ice(1:nl) = (ice(1:nl)/sum_s)*target_s
-        liquid(1:nl) = (liquid(1:nl)/sum_s)*target_s
+  !set empty snow layers to zero
+  do iz = -nsnow+1, isnow
+     snice(iz) = 0.0
+     snliq(iz) = 0.0
+     stc(iz)   = 0.0
+     dzsnso(iz)= 0.0
+     zsnso(iz) = 0.0
+  enddo
+
+  ! initialize the variables
+  soiltype = Noahmp50_struc(n)%noahmp50(t)%soiltype
+  do isoil = 1, size(soiltype)
+    BEXP(isoil)   = Noahmp50_struc(n)%noahmp50(t)%param%BEXP(isoil)
+    PSISAT(isoil) = Noahmp50_struc(n)%noahmp50(t)%param%PSISAT(isoil)
+    SMCMAX(isoil) = Noahmp50_struc(n)%noahmp50(t)%param%SMCMAX(isoil)
+  end do
+
+  sneqv = Noahmp50_struc(n)%noahmp50(t)%sneqv
+  snowh = Noahmp50_struc(n)%noahmp50(t)%snowh
+
+  zsnso(-nsnow+1:nsoil) = Noahmp50_struc(n)%noahmp50(t)%zss(1:nsnow+nsoil)
+
+! snow/soil layer thickness (m)
+  do iz = isnow+1, nsoil
+     if(iz == isnow+1) then
+        dzsnso(iz) = - zsnso(iz)
      else
-        ! No explicit profile is available for snow-free or thin-snow input.
-        ! As in Noah-MP snowfall initialization, create ice at surface T.
-        nl = 1
-        dz(1) = target_h
-        ice(1) = target_s
-        if (.not.ieee_is_finite(Noahmp50_struc(n)%noahmp50(t)%sfctmp)) &
-             call fail('non-finite surface temperature for new snow layer')
-        temperature(1) = min(tfrz, Noahmp50_struc(n)%noahmp50(t)%sfctmp)
-        if (.not.ieee_is_finite(temperature(1)) .or. temperature(1) <= 0.0) &
-             call fail('invalid surface temperature for new snow layer')
-     endif
+        dzsnso(iz) = zsnso(iz-1) - zsnso(iz)
+     end if
+  end do
 
-     ! Merge thin / nearly ice-free layers without Combine's drainage or
-     ! deletion of liquid SWE. The subsequent model step handles phase changes.
-     do while (nl > 1)
-        merged = .false.
-        do i = 1, nl
-           if (dz(i) >= dzmin(i) .and. ice(i) > 0.1) cycle
-           if (i == 1) then
-              neighbor = i + 1
-           elseif (i == nl) then
-              neighbor = i - 1
+  ! set ZSOIL
+  allocate(zsoil(nsoil))
+  ! zsoil is negative.
+  zsoil(1) = -Noahmp50_struc(n)%sldpth(1)
+  do i = 2, nsoil
+     zsoil(i) = zsoil(i-1) - Noahmp50_struc(n)%sldpth(i)
+  enddo
+
+  ! state variables
+  snice(-nsnow+1:0) = &
+       Noahmp50_struc(n)%noahmp50(t)%snowice(1:nsnow)
+  snliq(-nsnow+1:0) = &
+       Noahmp50_struc(n)%noahmp50(t)%snowliq(1:nsnow)
+  stc(-nsnow+1:0) = &
+       Noahmp50_struc(n)%noahmp50(t)%tsno(1:nsnow)
+  ! soil temperature
+  stc(1:nsoil) = &
+       Noahmp50_struc(n)%noahmp50(t)%tslb(1:nsoil)
+
+  ! from snowfall routine
+  ! creating a new layer
+  IF(ISNOW == 0.and.(dsneqv.gt.0.and.dsnowh.gt.0))  THEN
+     SNOWH = SNOWH + dsnowh
+     SNEQV = SNEQV + dsneqv
+  END IF
+
+  NEWNODE = 0
+
+  IF(ISNOW == 0 .AND. SNOWH >= 0.025.and.&
+       (dsneqv.gt.0.and.dsnowh.gt.0))  THEN
+     ISNOW    = -1
+     NEWNODE  =  1
+     DZSNSO(0)= SNOWH
+     SNOWH    = 0.
+     STC(0)   = &
+          MIN(273.16, Noahmp50_struc(n)%noahmp50(t)%sfctmp)   ! temporary setup
+     SNICE(0) = SNEQV
+     SNLIQ(0) = 0.
+  END IF
+
+  ! snow with layers
+  IF(ISNOW <  0 .AND. NEWNODE == 0 .and. &
+       (dsneqv.gt.0.and.dsnowh.gt.0)) then
+     SNICE(ISNOW+1)  = SNICE(ISNOW+1)   + dsneqv
+     DZSNSO(ISNOW+1) = DZSNSO(ISNOW+1)  + dsnowh
+  ENDIF
+
+  ! SNIP reduction: active snow indices are ISNOW+1:0.
+  ! Preserve the legacy sign/target gates. In particular, a depth-only
+  ! increment with zero SWE increment is still not applied here.
+  if(dsneqv.lt.0.and.dsnowh.lt.0) then
+     snowh1 = snowh + dsnowh
+     sneqv1 = sneqv + dsneqv
+     if(snowh1.ge.0.and.sneqv1.ge.0) then
+        reduction_applied = .true.
+        if (isnow < 0 .and. snowh1 > 0. .and. sneqv1 > 0.) then
+           layer_depth = sum(dzsnso(isnow+1:0))
+           layer_mass = sum(snice(isnow+1:0)) + sum(snliq(isnow+1:0))
+           if (layer_depth > 0. .and. layer_mass > 0.) then
+              ! Scale existing active layers; leave temperature and layer
+              ! count alone. The legacy Combine/Divide calls below handle
+              ! any subsequent layer merging/splitting.
+              dzsnso(isnow+1:0) = dzsnso(isnow+1:0)*(snowh1/layer_depth)
+              snice(isnow+1:0) = snice(isnow+1:0)*(sneqv1/layer_mass)
+              snliq(isnow+1:0) = snliq(isnow+1:0)*(sneqv1/layer_mass)
            else
-              neighbor = i + 1
-              if (dz(i-1) < dz(i+1)) neighbor = i - 1
+              ! No usable profile to rescale. Do not invent snow mass or
+              ! divide by zero; leave this increment unapplied and report it.
+              reduction_applied = .false.
+              write(LIS_logunit,'(a,3(1x,i0),2(1x,es16.8))') &
+                   'SNIP_REDUCTION_SKIPPED', n, update_call, t, layer_depth, layer_mass
            endif
-           upper = min(i, neighbor)
-           lower = max(i, neighbor)
-           call Combo(Noahmp50_struc(n)%noahmp50(t)%param, &
-                dz(lower), liquid(lower), ice(lower), temperature(lower), &
-                dz(upper), liquid(upper), ice(upper), temperature(upper))
-           do j = upper, nl-1
-              dz(j) = dz(j+1)
-              ice(j) = ice(j+1)
-              liquid(j) = liquid(j+1)
-              temperature(j) = temperature(j+1)
-           enddo
-           nl = nl - 1
-           merged = .true.
-           exit
-        enddo
-        if (.not.merged) exit
-     enddo
-
-     isnow = -nl
-     do i = 1, nl
-        j = isnow + i
-        fdz(j) = dz(i)
-        fice(j) = ice(i)
-        fliq(j) = liquid(i)
-        fstc(j) = temperature(i)
-     enddo
-     ! Divide changes geometry but conserves the total ice and liquid masses.
-     call Divide(Noahmp50_struc(n)%noahmp50(t)%param, nsnow, nsoil, &
-          isnow, fstc, fice, fliq, fdz)
-
-     if (isnow >= 0 .or. isnow < -nsnow) call fail('invalid reconstructed layer count')
-     i = isnow + 1
-     if (.not.all(ieee_is_finite(fdz(i:0))) .or. &
-         .not.all(ieee_is_finite(fice(i:0))) .or. &
-         .not.all(ieee_is_finite(fliq(i:0))) .or. &
-         .not.all(ieee_is_finite(fstc(i:0)))) call fail('non-finite reconstructed layer')
-     if (any(fdz(i:0) <= 0.0) .or. any(fice(i:0) < 0.0) .or. &
-         any(fliq(i:0) < 0.0) .or. any(fstc(i:0) <= 0.0)) &
-         call fail('invalid reconstructed layer')
-     sum_h = sum(fdz(i:0))
-     sum_s = sum(fice(i:0)) + sum(fliq(i:0))
-     if (sum_s <= 0.0) call fail('reconstructed snow has no water mass')
-     ! Only roundoff may remain after conservative merge/split operations.
-     htolerance = 8.0*epsilon(target_h)*max(1.0, target_h)
-     stolerance = 8.0*epsilon(target_s)*max(1.0, target_s)
-     if (abs(sum_h-target_h) > htolerance .or. abs(sum_s-target_s) > stolerance) &
-          call fail('layer remapping did not conserve analysis targets')
-     fdz(i:0) = (fdz(i:0)/sum_h)*target_h
-     fice(i:0) = (fice(i:0)/sum_s)*target_s
-     fliq(i:0) = (fliq(i:0)/sum_s)*target_s
+        else
+           ! Retain aggregate (unlayered) snow, including zero endpoints.
+           ! No explicit layer may enter Compact with zero depth or mass.
+           isnow = 0
+        endif
+        if (reduction_applied) then
+           snowh = snowh1
+           sneqv = sneqv1
+           depth_error = 0.
+           mass_error = 0.
+           if (isnow < 0) then
+              depth_error = abs(sum(dzsnso(isnow+1:0))-snowh1)
+              mass_error = abs(sum(snice(isnow+1:0))+sum(snliq(isnow+1:0))-sneqv1)
+           endif
+           depth_tolerance = max(1.e-6, 8.*epsilon(snowh)*max(1.,snowh1))
+           mass_tolerance = max(1.e-4, 8.*epsilon(sneqv)*max(1.,sneqv1))
+           if (depth_error > depth_tolerance .or. mass_error > mass_tolerance) then
+              write(LIS_logunit,'(a,3(1x,i0),4(1x,es16.8))') &
+                   'SNIP_REDUCTION_MAP_WARN', n, update_call, t, &
+                   snowh1, sneqv1, depth_error, mass_error
+           endif
+           ! At most three samples per setter call/rank. Check all reductions
+           ! above, but avoid writing one success line for every patch.
+           report_sample = sample_count < 3
+           if (report_sample) then
+              sample_count = sample_count + 1
+              write(LIS_logunit,'(a,3(1x,i0),4(1x,es16.8))') &
+                   'SNIP_REDUCTION_MAP', n, update_call, t, &
+                   snowh1, sneqv1, depth_error, mass_error
+           endif
+        endif
+     endif
   endif
 
-  ! Commit the result only after validation. Inactive output slots stay zero.
-  ! Thin snow has aggregate SWE/depth and no explicit layer or liquid profile.
-  Noahmp50_struc(n)%noahmp50(t)%isnow = isnow
-  Noahmp50_struc(n)%noahmp50(t)%snowh = target_h
-  Noahmp50_struc(n)%noahmp50(t)%sneqv = target_s
-  Noahmp50_struc(n)%noahmp50(t)%snowice = 0.0
-  Noahmp50_struc(n)%noahmp50(t)%snowliq = 0.0
-  Noahmp50_struc(n)%noahmp50(t)%tsno = 0.0
-  Noahmp50_struc(n)%noahmp50(t)%zss(1:nsnow) = 0.0
-  depth = 0.0
-  do i = isnow+1, 0
-     k = i + nsnow
-     depth = depth + fdz(i)
-     Noahmp50_struc(n)%noahmp50(t)%snowice(k) = fice(i)
-     Noahmp50_struc(n)%noahmp50(t)%snowliq(k) = fliq(i)
-     Noahmp50_struc(n)%noahmp50(t)%tsno(k) = fstc(i)
-     Noahmp50_struc(n)%noahmp50(t)%zss(k) = -depth
-  enddo
-  ! Soil thicknesses and temperatures do not change; only their origin shifts.
-  if (isnow < 0) depth = target_h
-  do i = 1, nsoil
-     depth = depth + Noahmp50_struc(n)%sldpth(i)
-     Noahmp50_struc(n)%noahmp50(t)%zss(nsnow+i) = -depth
+  ! ice fraction at the last timestep, add check for both snice and snliq
+  ! are 0.0
+  do snl_idx=isnow+1,0
+     if(snice(snl_idx)+snliq(snl_idx)>0.0) then
+        ficeold(snl_idx)  = snice(snl_idx) / (snice(snl_idx)+snliq(snl_idx))
+     else
+        ficeold(snl_idx)  = 0.0
+     endif
   enddo
 
-contains
-  subroutine fail(message)
-    character(len=*), intent(in) :: message
-    write(LIS_logunit,*) '[ERR] SNIP_UPDATE ', trim(message), ' nest/tile=', n, t
-    write(LIS_logunit,*) '[ERR] SNIP_UPDATE old depth/SWE, increments=', &
-         Noahmp50_struc(n)%noahmp50(t)%snowh, Noahmp50_struc(n)%noahmp50(t)%sneqv, dsnowh, dsneqv
-    call LIS_endrun()
-  end subroutine fail
+  sice(:) = max(0.0, Noahmp50_struc(n)%noahmp50(t)%smc(:)&
+                     - Noahmp50_struc(n)%noahmp50(t)%sh2o(:))
+
+  !imelt
+  do j = -nsnow+1, nsoil
+     supercool(j) = 0.0
+  end do
+
+  do j = isnow+1,0       ! all layers
+     mice(j) = snice(j)
+     mliq(j) = snliq(j)
+  end do
+
+  do j = 1, nsoil         ! soil
+     mliq(j) =  Noahmp50_struc(n)%noahmp50(t)%sh2o(j) * dzsnso(j) * 1000.
+     mice(j) = (Noahmp50_struc(n)%noahmp50(t)%smc(j) - &
+                Noahmp50_struc(n)%noahmp50(t)%sh2o(j))  * dzsnso(j) * 1000.
+  end do
+
+  do j = isnow+1,nsoil    ! all layers
+     imelt(j)    = 0
+  enddo
+
+  do j = 1,nsoil
+!     if (opt_frz == 1) then
+! Assuming the use of option 1 for now
+        if(stc(j) < tfrz) then
+           smp = hfus*(tfrz-stc(j))/(grav*stc(j))             !(m)
+           SUPERCOOL(J) = SMCMAX(J)*(SMP/PSISAT(J))**(-1./BEXP(J))
+           SUPERCOOL(J) = SUPERCOOL(J)*DZSNSO(J)*1000.        !(mm)
+        end if
+!     end if
+!     if (opt_frz == 2) then
+!        call frh2o (supercool(j),&
+!             Noahmp50_struc(n)%noahmp50(t)%sstc(j),&
+!             Noahmp50_struc(n)%noahmp50(t)%smc(j),&
+!             Noahmp50_struc(n)%noahmp50(t)%sh2o(j))
+!        supercool(j) = supercool(j)*dzsnso(j)*1000.        !(mm)
+!     end if
+  enddo
+
+  do j = isnow+1,nsoil
+     if (mice(j) > 0. .and. stc(j) >= tfrz) then  !melting
+        imelt(j) = 1
+     endif
+     if (mliq(j) > supercool(j) .and. stc(j) < tfrz) then
+        imelt(j) = 2
+     endif
+
+     ! If snow exists, but its thickness is not enough to create a layer
+     if (isnow == 0 &
+          .and. sneqv > 0. .and. j == 1) then
+        if (stc(j) >= tfrz) then
+           imelt(j) = 1
+        endif
+     endif
+  enddo
+
+  ! from SNOWWATER
+  SNOFLOW = 0.0
+  ponding1 = 0.0
+  ponding2 = 0.0
+
+  ! based on Noah-MP v4.5 physics
+  if(isnow < 0) &
+       call compact (Noahmp50_struc(n)%noahmp50(t)%param, &
+       nsnow, nsoil, noahmp50_struc(n)%ts,     & !in
+       stc, snice, snliq, zsoil, imelt, ficeold, iloc, jloc, & !in
+       isnow, dzsnso ,zsnso)                                   !inout
+  if(isnow < 0) &
+       call combine (Noahmp50_struc(n)%noahmp50(t)%param, &
+       nsnow, nsoil ,iloc, jloc,          & !in
+       isnow, noahmp50_struc(n)%noahmp50(t)%sh2o,   & !inout
+       stc, snice, snliq, dzsnso, sice, snowh, sneqv, & !inout
+       ponding1, ponding2)                              !out
+  if(isnow < 0) &
+       call divide (Noahmp50_struc(n)%noahmp50(t)%param, nsnow, nsoil,   & !in
+       isnow, stc, snice, snliq, dzsnso) !inout
+
+  !set empty snow layers to zero
+  do iz = -nsnow+1, isnow
+     snice(iz) = 0.0
+     snliq(iz) = 0.0
+     stc(iz)   = 0.0
+     dzsnso(iz)= 0.0
+     zsnso(iz) = 0.0
+  enddo
+
+  !to obtain equilibrium state of snow in glacier region
+  IF(SNEQV > 5000.0) THEN   ! 5000 mm -> maximum water depth
+     BDSNOW      = SNICE(0) / DZSNSO(0)
+     SNOFLOW     = (SNEQV - 5000.0)
+     SNICE(0)    = SNICE(0)  - SNOFLOW
+     DZSNSO(0)   = DZSNSO(0) - SNOFLOW/BDSNOW
+  END IF
+
+  ! sum up snow mass for layered snow
+  IF(ISNOW < 0) THEN  ! MB: only do for multi-layer
+     SNEQV = 0.0
+     DO IZ = ISNOW+1,0
+        SNEQV = SNEQV + SNICE(IZ) + SNLIQ(IZ)
+     ENDDO
+  END IF
+
+  ! Reset ZSNSO and layer thinkness DZSNSO
+  DO IZ = ISNOW+1, 0
+     DZSNSO(IZ) = -DZSNSO(IZ)
+  END DO
+
+  DZSNSO(1) = ZSOIL(1)
+  DO IZ = 2,NSOIL
+     DZSNSO(IZ) = (ZSOIL(IZ) - ZSOIL(IZ-1))
+  END DO
+
+  ZSNSO(ISNOW+1) = DZSNSO(ISNOW+1)
+  DO IZ = ISNOW+2 ,NSOIL
+     ZSNSO(IZ) = ZSNSO(IZ-1) + DZSNSO(IZ)
+  ENDDO
+
+  DO IZ = ISNOW+1 ,NSOIL
+     DZSNSO(IZ) = -DZSNSO(IZ)
+  END DO
+
+  ! sum up snow thickness for layered snow
+  IF(ISNOW < 0) THEN  ! Only do for multi-layer
+     SNOWH = 0.0      !
+     DO IZ = ISNOW+1,0
+        SNOWH = SNOWH + DZSNSO(IZ)
+     ENDDO
+  END IF
+
+  ! No snow layer case, limit snow density to 1000
+   IF (ISNOW == 0 .AND. SNEQV > 0.0 .AND. SNOWH > 0.0) THEN
+      BDSNOW = SNEQV/SNOWH
+      IF (BDSNOW >= DENH2O) THEN
+         SNOWH  = SNOWH*(BDSNOW/DENH2O) ! change unit, SNEQV=[mm] SNOWH=[m]
+      END IF
+   END IF
+
+  ! Temporary samples distinguish mapping from the retained snow physics.
+  ! Final depth/SWE need not equal the analysis target after that physics.
+  if (report_sample) then
+     write(LIS_logunit,'(a,3(1x,i0),4(1x,es16.8))') &
+          'SNIP_REDUCTION_POST', n, update_call, t, &
+          snowh1, sneqv1, snowh, sneqv
+  endif
+
+  ! update state vars
+  Noahmp50_struc(n)%noahmp50(t)%isnow = isnow
+  Noahmp50_struc(n)%noahmp50(t)%sneqv = sneqv
+  Noahmp50_struc(n)%noahmp50(t)%snowh = snowh
+  Noahmp50_struc(n)%noahmp50(t)%zss(1:nsnow+nsoil) = zsnso(-nsnow+1:nsoil)
+  Noahmp50_struc(n)%noahmp50(t)%snowice(1:nsnow)   = snice(-nsnow+1:0)
+  Noahmp50_struc(n)%noahmp50(t)%snowliq(1:nsnow)   = snliq(-nsnow+1:0)
+  Noahmp50_struc(n)%noahmp50(t)%tsno(1:nsnow)      = stc(-nsnow+1:0)
+  Noahmp50_struc(n)%noahmp50(t)%tslb(1:nsoil)      = stc(1:nsoil)
+
+  deallocate(ficeold)
+  deallocate(snice)
+  deallocate(snliq)
+  deallocate(stc)
+  deallocate(imelt)
+  deallocate(supercool)
+  deallocate(mice)
+  deallocate(mliq)
+  deallocate(dzsnso)
+  deallocate(zsnso)
+  deallocate(sice)
+  deallocate(bexp)
+  deallocate(psisat)
+  deallocate(smcmax)
+
 end subroutine noahmp50_snip_update
+
