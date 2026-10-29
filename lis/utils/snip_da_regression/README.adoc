@@ -1,0 +1,73 @@
+= Noah-MP 5.0 SNIP update regression checks
+
+== Update behavior
+
+The SNIP interface supplies SWE in mm (equivalent to kg/m2) and snow depth
+in m to a dedicated Noah-MP 5.0 updater. It shares the existing
+`NoahMP50_snowphys_updateMod` physics without calling the USAFSI updater.
+
+When both increments are negative and both requested totals are nonnegative,
+active snow thicknesses and ice/liquid masses are rescaled to those totals.
+Active indices are `isnow+1:0`. Layer count and temperature are retained during
+scaling; the existing `Compact`, `Combine`, and `Divide` calls handle subsequent
+physical adjustments and layer changes. Unlayered snow remains aggregate,
+and zero targets do not create zero-thickness or zero-mass explicit layers.
+A layered state without positive summed depth/mass is not rescaled.
+
+Growth, zero or one-zero increments, mixed signs and negative-target rejection
+retain the legacy behavior. In particular, positive depth increments with zero
+SWE increment over initially snow-free ground remain unapplied. No new density
+is introduced. Existing QC, physical density limits, thin-snow liquid handling
+and the glacier cap remain in place. Final totals can therefore differ from
+the requested values after the retained physical adjustments.
+
+The production updater contains no temporary sampling counters, mapping-error
+calculations, diagnostic writes, or diagnostic aborts. Standard LIS logging
+and error handling elsewhere are unaffected.
+
+== Optional developer test
+
+`run_tests.py` compiles the production SNIP updater, the original USAFSI updater
+and the unchanged snow-physics module with minimal model-state containers.
+No snow physics is mocked. This is an optional developer test, separate from
+the configured LIS build; it does not install packages or compilers.
+
+Use an already configured server compiler, for example:
+
+[source,bash]
+----
+FC=ifx python3 lis/utils/snip_da_regression/run_tests.py --output snip-unit-results
+----
+
+`FC=ifort` or `FC=gfortran` may also be used. `FFLAGS` can override debug flags.
+Choose an output directory that does not already exist. The runner records the
+compiler, source hashes, compiler output and test result in that directory.
+
+The test driver contains 147 comparisons against the original updater outside
+paired reductions and 58 reduction cases. Cases include the zero-SWE-increment
+inputs, dry dt=0 target mapping, wet snow, unlayered snow, complete removal,
+active-layer consistency, and the retained dt=1800 physical adjustments.
+Success prints `SNIP_UNIT_PASS 147 58`. This test program's own result output
+is separate from the production LIS simulation.
+
+== Validation scope
+
+The update algorithm was compiled on Discover and exercised in a short global
+12-member EnKF/SNIP run with four three-hourly ensemble outputs and 256 ranks.
+The supplied results showed normal completion, valid active-layer temperatures,
+and consistent layer mass/depth totals. A single-member open-loop run provides
+an additional behavioral comparison; it is not an independent accuracy reference.
+
+The final cleanup removes diagnostic-only code without changing the update
+calculations or branches. Its source equivalence and structure were checked;
+the cleaned revision has not yet been rebuilt/rerun on Discover. The optional
+isolated regression program has not been executed in this development session.
+No Fortran compilation is performed on the development Mac.
+
+For a clean-revision integration check, use the site's existing LIS build and
+repeat the same restart, forcing, observations, perturbation setup and MPI
+layout. Compare model variables in the new history files with the validated
+run, rather than NetCDF file bytes or creation timestamps.
+
+Input/output NetCDF files, run logs and site-specific configurations are kept
+outside the repository and can be supplied separately for reproducibility.

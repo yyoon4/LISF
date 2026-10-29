@@ -2103,8 +2103,10 @@ Snowdepth in meters. Select `Land surface model: "Noah-MP.5.0"`
 and `Data assimilation set: "SNIP"` for the
 SNIP DA instance. The SNIP observation operator returns snow depth in
 meters; no additional unit conversion is applied by the model interface.
-The NoahMP.5.0 interface reuses its existing USAFSI snow-state update
-and snow-layer physics.
+The NoahMP.5.0 interface updates snow states through its own SNIP
+routine and shares the existing NoahMP.5.0 snow-layer physics. When snow
+depth and SWE both decrease, active-layer thicknesses and ice/liquid masses
+are rescaled to the requested totals before the existing snow physics runs.
 
 `SNIP data directory:` specifies the directory for the
 SNIP data.
