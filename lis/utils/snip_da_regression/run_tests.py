@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compile and test the production SNIP updater on a configured server.
 Optional; use the normal LIS build/run for integration validation.
-No packages are installed. Only LIS state containers/logging are stubbed.
+No packages are installed. Only LIS state containers are stubbed.
 The actual Noah-MP Compact/Combine/Divide implementation is compiled unchanged.
 """
 import argparse
@@ -66,8 +66,7 @@ def main():
     output = run.stdout + run.stderr
     (out / 'legacy_and_reductions.log').write_text(output)
     passed = (run.returncode == 0 and 'SNIP_UNIT_PASS 147 58' in output
-              and 'SNIP_REDUCTION_MAP_WARN' not in output
-              and 'SNIP_REDUCTION_SKIPPED' not in output)
+              and 'SNIP_REDUCTION_' not in output)
     result['tests'].append({'name': 'legacy_and_reductions', 'returncode': run.returncode, 'passed': passed})
     return finish('passed' if all(t['passed'] for t in result['tests']) else 'tests_failed',
                   0 if all(t['passed'] for t in result['tests']) else 1)

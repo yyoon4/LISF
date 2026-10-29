@@ -1,105 +1,73 @@
-= Noah-MP 5.0 SNIP reduction fix: verification stage
+= Noah-MP 5.0 SNIP update regression checks
 
-== Scope
+== Update behavior
 
-SNIP now owns a copy of the original USAFSI update procedure, with only the
-paired-reduction branch changed. It no longer calls `noahmp50_usafsi_update`.
-The original USAFSI routine and shared snow-physics module are unchanged.
+The SNIP interface supplies SWE in mm (equivalent to kg/m2) and snow depth
+in m to a dedicated Noah-MP 5.0 updater. It shares the existing
+`NoahMP50_snowphys_updateMod` physics without calling the USAFSI updater.
 
-* When BOTH depth and SWE increments are negative and both targets are
-  nonnegative, scale the existing active snow thicknesses and ice/liquid masses
-  to those targets. Active Fortran indices are `isnow+1:0`; do not write the
-  residual depth to the inactive index `isnow` or discard a layer prematurely.
-* Temperature and layer count are retained during this scaling. The existing
-  `Compact`, `Combine`, and `Divide` calls then handle compaction and layer changes.
-* Unlayered snow stays aggregate. A zero depth or SWE target is kept as an
-  aggregate state so zero-thickness/mass layers do not enter `Compact`.
-* If a purported layered state has no positive summed depth or mass, skip the
-  reduction and log `SNIP_REDUCTION_SKIPPED`; do not invent mass or divide by zero.
-* Growth, zero increments, one-zero increments, mixed signs and negative-target
-  rejection follow the original update. Existing physical density limits,
-  thin-snow liquid handling and the 5000 mm glacier cap are retained.
+When both increments are negative and both requested totals are nonnegative,
+active snow thicknesses and ice/liquid masses are rescaled to those totals.
+Active indices are `isnow+1:0`. Layer count and temperature are retained during
+scaling; the existing `Compact`, `Combine`, and `Divide` calls handle subsequent
+physical adjustments and layer changes. Unlayered snow remains aggregate,
+and zero targets do not create zero-thickness or zero-mass explicit layers.
+A layered state without positive summed depth/mass is not rescaled.
 
-The two reported initially snow-free inputs (depth increments 0.00020394144 m
-and 0.0073130843 m, SWE increment zero) are ignored as before. This preserves
-compatibility; it does not add snow at these points or solve snow-free density
-initialization in QC. The existing `noahmp50_qcsnip` remains unchanged.
+Growth, zero or one-zero increments, mixed signs and negative-target rejection
+retain the legacy behavior. In particular, positive depth increments with zero
+SWE increment over initially snow-free ground remain unapplied. No new density
+is introduced. Existing QC, physical density limits, thin-snow liquid handling
+and the glacier cap remain in place. Final totals can therefore differ from
+the requested values after the retained physical adjustments.
 
-The previous broad rewrite, strict fatal target assertions and the later
-0.00254 m trace-target normalization have been withdrawn. `setsnipvars` is
-restored exactly to the original branch. This removes newly introduced run
-stops, rather than replacing them with another depth threshold.
+The production updater contains no temporary sampling counters, mapping-error
+calculations, diagnostic writes, or diagnostic aborts. Standard LIS logging
+and error handling elsewhere are unaffected.
 
-== Temporary diagnostics
+== Optional developer test
 
-Successful paired reductions emit at most three samples per setter call/rank:
+`run_tests.py` compiles the production SNIP updater, the original USAFSI updater
+and the unchanged snow-physics module with minimal model-state containers.
+No snow physics is mocked. This is an optional developer test, separate from
+the configured LIS build; it does not install packages or compilers.
 
-----
-SNIP_REDUCTION_MAP nest local_call tile target_depth_m target_SWE_kgm2 mapping_depth_error_m mapping_SWE_error_kgm2
-SNIP_REDUCTION_POST nest local_call tile target_depth_m target_SWE_kgm2 final_depth_m final_SWE_kgm2
-----
-
-`MAP` is measured BEFORE the retained snow physics. Mapping residuals are
-checked for every applied reduction, using max(1e-6,8*epsilon*max(1,target_depth))
-m and max(1e-4,8*epsilon*max(1,target_SWE)) kg/m2. `SNIP_REDUCTION_MAP_WARN`
-reports any excess. Neither diagnostics nor skipped-profile messages abort LIS.
-
-`POST` includes the original physical adjustments. A final difference is not
-by itself a failed DA mapping. Setter calls can arise from state perturbations
-as well as EnKF; `local_call` is not a timestamp or a globally unique DA cycle.
-These diagnostics are temporary and should be removed AFTER the server results
-are accepted. They do not change the model state.
-
-== Discover update and normal LIS run
-
-In the existing checkout of `codex/noahmp50-snip-target-conservation`:
-
-[source,bash]
-----
-git status --short
-git switch codex/noahmp50-snip-target-conservation
-git pull --ff-only origin codex/noahmp50-snip-target-conservation
-git submodule update --init --recursive
-git log -1 --format='%h %s'
-----
-
-Use the SAME configured LIS build procedure already used successfully on
-Discover, then rerun the same short 12-member ensemble experiment from the SAME
-initial restart, forcing, observations, perturbation setup and process layout.
-Keep the old results and use a separate output directory. Retain the existing
-ensemble output table and three-hour interval. Do not resume from the failed
-18:00 intermediate state. A new installation, clone or compiler is unnecessary.
-
-Return the commit hash, normal build/run logs, ALL rank `lislog*` files, actual
-config/output table and four new ensemble history files. The new executable
-should no longer print `SNIP_TARGET_CHECK` or `SNIP_TRACE_SNOW_QC`.
-
-An optional log summary (does not certify run completion):
-
-[source,bash]
-----
-python3 lis/utils/snip_da_regression/check_run_logs.py \
-  --logs /path/to/new_run/output/logs --output snip_reduction_summary.json
-----
-
-== Optional developer regression test
-
-`run_tests.py` is a separate developer test, NOT a LIS build requirement. It
-compiles the actual new SNIP updater, original USAFSI updater, and unchanged
-snow-physics module with minimal state/log containers. No physics is mocked.
-It installs nothing. On an already configured server it can be run with the
-available compiler (`FC=ifx`, `FC=ifort`, or `FC=gfortran`); `FFLAGS` may override
-its debug flags. The output directory must be new.
+Use an already configured server compiler, for example:
 
 [source,bash]
 ----
 FC=ifx python3 lis/utils/snip_da_regression/run_tests.py --output snip-unit-results
 ----
 
-There are 147 exact legacy-output comparisons outside paired reductions,
-including the reported failure inputs, and 58 reduction cases. Dry dt=0 tests
-isolate target conservation; dt=1800 tests retain compaction. Wet cases check
-ice/liquid scaling and the existing thin-snow liquid handling. Success prints
-`SNIP_UNIT_PASS 147 58`. These tests have NOT been compiled/run on the development
-Mac. Static checks and a separate numerical mapping calculation do not replace
-the Discover build and short integration run.
+`FC=ifort` or `FC=gfortran` may also be used. `FFLAGS` can override debug flags.
+Choose an output directory that does not already exist. The runner records the
+compiler, source hashes, compiler output and test result in that directory.
+
+The test driver contains 147 comparisons against the original updater outside
+paired reductions and 58 reduction cases. Cases include the zero-SWE-increment
+inputs, dry dt=0 target mapping, wet snow, unlayered snow, complete removal,
+active-layer consistency, and the retained dt=1800 physical adjustments.
+Success prints `SNIP_UNIT_PASS 147 58`. This test program's own result output
+is separate from the production LIS simulation.
+
+== Validation scope
+
+The update algorithm was compiled on Discover and exercised in a short global
+12-member EnKF/SNIP run with four three-hourly ensemble outputs and 256 ranks.
+The supplied results showed normal completion, valid active-layer temperatures,
+and consistent layer mass/depth totals. A single-member open-loop run provides
+an additional behavioral comparison; it is not an independent accuracy reference.
+
+The final cleanup removes diagnostic-only code without changing the update
+calculations or branches. Its source equivalence and structure were checked;
+the cleaned revision has not yet been rebuilt/rerun on Discover. The optional
+isolated regression program has not been executed in this development session.
+No Fortran compilation is performed on the development Mac.
+
+For a clean-revision integration check, use the site's existing LIS build and
+repeat the same restart, forcing, observations, perturbation setup and MPI
+layout. Compare model variables in the new history files with the validated
+run, rather than NetCDF file bytes or creation timestamps.
+
+Input/output NetCDF files, run logs and site-specific configurations are kept
+outside the repository and can be supplied separately for reproducibility.

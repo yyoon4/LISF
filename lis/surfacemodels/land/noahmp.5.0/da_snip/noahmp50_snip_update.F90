@@ -21,7 +21,6 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
 ! USES:
   use NoahMP50_lsmMod
   use NoahMP50_snowphys_updateMod
-  use LIS_logMod, only: LIS_logunit
 
   implicit none
 !
@@ -72,18 +71,10 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
   real    :: SNOFLOW, BDSNOW
 
 
-  ! Temporary, non-fatal diagnostics for the reduction mapping only.
-  integer, save :: update_call = 0, sample_count = 0
-  logical :: reduction_applied, report_sample
-  real :: layer_depth, layer_mass, depth_error, mass_error
-  real :: depth_tolerance, mass_tolerance
+  logical :: reduction_applied
+  real :: layer_depth, layer_mass
 
-  if (t == 1) then
-     update_call = update_call + 1
-     sample_count = 0
-  endif
   reduction_applied = .false.
-  report_sample = .false.
 
   isnow = Noahmp50_struc(n)%noahmp50(t)%isnow
   nsoil = Noahmp50_struc(n)%nsoil
@@ -204,10 +195,8 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
               snliq(isnow+1:0) = snliq(isnow+1:0)*(sneqv1/layer_mass)
            else
               ! No usable profile to rescale. Do not invent snow mass or
-              ! divide by zero; leave this increment unapplied and report it.
+              ! divide by zero; leave this increment unapplied.
               reduction_applied = .false.
-              write(LIS_logunit,'(a,3(1x,i0),2(1x,es16.8))') &
-                   'SNIP_REDUCTION_SKIPPED', n, update_call, t, layer_depth, layer_mass
            endif
         else
            ! Retain aggregate (unlayered) snow, including zero endpoints.
@@ -217,28 +206,6 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
         if (reduction_applied) then
            snowh = snowh1
            sneqv = sneqv1
-           depth_error = 0.
-           mass_error = 0.
-           if (isnow < 0) then
-              depth_error = abs(sum(dzsnso(isnow+1:0))-snowh1)
-              mass_error = abs(sum(snice(isnow+1:0))+sum(snliq(isnow+1:0))-sneqv1)
-           endif
-           depth_tolerance = max(1.e-6, 8.*epsilon(snowh)*max(1.,snowh1))
-           mass_tolerance = max(1.e-4, 8.*epsilon(sneqv)*max(1.,sneqv1))
-           if (depth_error > depth_tolerance .or. mass_error > mass_tolerance) then
-              write(LIS_logunit,'(a,3(1x,i0),4(1x,es16.8))') &
-                   'SNIP_REDUCTION_MAP_WARN', n, update_call, t, &
-                   snowh1, sneqv1, depth_error, mass_error
-           endif
-           ! At most three samples per setter call/rank. Check all reductions
-           ! above, but avoid writing one success line for every patch.
-           report_sample = sample_count < 3
-           if (report_sample) then
-              sample_count = sample_count + 1
-              write(LIS_logunit,'(a,3(1x,i0),4(1x,es16.8))') &
-                   'SNIP_REDUCTION_MAP', n, update_call, t, &
-                   snowh1, sneqv1, depth_error, mass_error
-           endif
         endif
      endif
   endif
@@ -391,14 +358,6 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
          SNOWH  = SNOWH*(BDSNOW/DENH2O) ! change unit, SNEQV=[mm] SNOWH=[m]
       END IF
    END IF
-
-  ! Temporary samples distinguish mapping from the retained snow physics.
-  ! Final depth/SWE need not equal the analysis target after that physics.
-  if (report_sample) then
-     write(LIS_logunit,'(a,3(1x,i0),4(1x,es16.8))') &
-          'SNIP_REDUCTION_POST', n, update_call, t, &
-          snowh1, sneqv1, snowh, sneqv
-  endif
 
   ! update state vars
   Noahmp50_struc(n)%noahmp50(t)%isnow = isnow

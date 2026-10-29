@@ -25,12 +25,3 @@ module NoahMP50_lsmMod
   end type
   type(nest_type) :: Noahmp50_struc(1)
 end module
-
-module LIS_logMod
-  implicit none
-  integer :: LIS_logunit=6
-contains
-  subroutine LIS_endrun()
-    error stop 99
-  end subroutine
-end module
