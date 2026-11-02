@@ -12,7 +12,7 @@
 ! \label{noahmp50_map_snip}
 !
 ! !REVISION HISTORY:
-! 19 Oct 2026: Port SNIP DA to NoahMP 5.0 using existing DA interfaces.
+! 19 Oct 2026: Yeosang Yoon; Initial SNIP interface.
 ! 27Feb2005: Sujay Kumar; Initial Specification
 ! 25Jun2006: Sujay Kumar: Updated for the ESMF design
 ! 02 Mar 2010: Sujay Kumar; Modified for Noah 3.1

@@ -12,7 +12,7 @@
 ! \label{noahmp50_transform_snip}
 !
 ! !REVISION HISTORY:
-! 19 Oct 2026: Port SNIP DA to NoahMP 5.0 using existing DA interfaces.
+! 19 Oct 2026: Yeosang Yoon; Initial SNIP interface.
 ! 18 Jul 2025: Eric Kemp; Initial specification (copied from USAFSI version)
 !
 ! !INTERFACE:

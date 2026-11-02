@@ -12,7 +12,8 @@
 ! \label{noahmp50_snip_update}
 !
 ! !REVISION HISTORY:
-! 28 Oct 2026: Keep the legacy update; correct SNIP snow reductions locally.
+! 28 Oct 2026: Yeosang Yoon; Fix snow reduction updates.
+! 19 Oct 2026: Yeosang Yoon; Initial SNIP interface.
 !  May 2023: Cenlin He; update to work with refactored NoahMP (v5.0 and newer)
 !
 ! !INTERFACE
@@ -175,9 +176,7 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
      DZSNSO(ISNOW+1) = DZSNSO(ISNOW+1)  + dsnowh
   ENDIF
 
-  ! SNIP reduction: active snow indices are ISNOW+1:0.
-  ! Preserve the legacy sign/target gates. In particular, a depth-only
-  ! increment with zero SWE increment is still not applied here.
+  ! Rescale active snow layers to the reduced depth and SWE.
   if(dsneqv.lt.0.and.dsnowh.lt.0) then
      snowh1 = snowh + dsnowh
      sneqv1 = sneqv + dsneqv
@@ -187,20 +186,15 @@ subroutine noahmp50_snip_update(n, t, dsneqv, dsnowh)
            layer_depth = sum(dzsnso(isnow+1:0))
            layer_mass = sum(snice(isnow+1:0)) + sum(snliq(isnow+1:0))
            if (layer_depth > 0. .and. layer_mass > 0.) then
-              ! Scale existing active layers; leave temperature and layer
-              ! count alone. The legacy Combine/Divide calls below handle
-              ! any subsequent layer merging/splitting.
               dzsnso(isnow+1:0) = dzsnso(isnow+1:0)*(snowh1/layer_depth)
               snice(isnow+1:0) = snice(isnow+1:0)*(sneqv1/layer_mass)
               snliq(isnow+1:0) = snliq(isnow+1:0)*(sneqv1/layer_mass)
            else
-              ! No usable profile to rescale. Do not invent snow mass or
-              ! divide by zero; leave this increment unapplied.
+              ! Skip profiles with nonpositive depth or mass.
               reduction_applied = .false.
            endif
         else
-           ! Retain aggregate (unlayered) snow, including zero endpoints.
-           ! No explicit layer may enter Compact with zero depth or mass.
+           ! Retain aggregate snow without explicit layers.
            isnow = 0
         endif
         if (reduction_applied) then

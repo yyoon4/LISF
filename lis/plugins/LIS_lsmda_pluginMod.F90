@@ -35,6 +35,7 @@ module LIS_lsmda_pluginMod
 !  06 Jun 2022: Yonghwan Kwon, added SMAP_E_OPL soil moisture Assimilation
 !                              added GVF data assimilation
 !  19 Sep 2026: Cenlin He: Added NoahMP.5.0
+!  19 Oct 2026: Yeosang Yoon; Added SNIP assimilation for NoahMP.5.0.
 !
 !EOP
   implicit none

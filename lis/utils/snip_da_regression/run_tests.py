@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Compile and test the production SNIP updater on a configured server.
-Optional; use the normal LIS build/run for integration validation.
-No packages are installed. Only LIS state containers are stubbed.
-The actual Noah-MP Compact/Combine/Divide implementation is compiled unchanged.
-"""
+"""Run the standalone Noah-MP 5.0 SNIP regression test."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
