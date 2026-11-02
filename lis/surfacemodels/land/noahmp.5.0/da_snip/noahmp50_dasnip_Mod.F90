@@ -15,7 +15,7 @@ module noahmp50_dasnip_Mod
 ! !DESCRIPTION:
 !
 ! !REVISION HISTORY:
-! 19 Oct 2026: Port SNIP DA to NoahMP 5.0 using existing DA interfaces.
+! 19 Oct 2026: Yeosang Yoon; Initial SNIP interface.
 !
 ! !USES:
 
