@@ -27,6 +27,7 @@ module RAPID_damStateMod
 ! !REVISION HISTORY:
 ! 03 Nov 2026: Yeosang Yoon: Initial LIS dam state management and restart I/O;
 !                          reuse Victor Roland's supplied initialization law.
+! 03 Nov 2026: Yeosang Yoon: Match LIS MPI include/module bindings for broadcast.
 !
 !EOP
   use ESMF, only: ESMF_KIND_R8
@@ -39,7 +40,11 @@ module RAPID_damStateMod
 #include <petsc/finclude/petscmat.h>
   use petscmat
 #ifdef SPMD
-  use mpi, only: MPI_Bcast, MPI_INTEGER
+#ifdef USE_INCLUDE_MPI
+  use LIS_mpiMod, only: LIS_MPI_INTEGER => MPI_INTEGER
+#else
+  use LIS_mpiMod, only: MPI_Bcast, LIS_MPI_INTEGER => MPI_INTEGER
+#endif
 #endif
   use rapid_var, only: rank, ierr, IS_one, ZS_one, IS_riv_bas, IS_dam_tot, &
        IV_riv_loc1, IV_riv_bas_id, IV_dam_tot_id, IV_dam_pos, &
@@ -310,6 +315,10 @@ contains
   subroutine RAPID_dam_restore(n, member)
     integer, intent(in) :: n, member
     integer :: trajectory, initialize, j
+#if defined(SPMD) && defined(USE_INCLUDE_MPI)
+    ! LIS uses mpif.h in this configuration; MPI_Bcast is an external routine.
+    external :: MPI_Bcast
+#endif
     PetscScalar, allocatable :: routed_flow(:)
     real(ESMF_KIND_R8), allocatable :: flow(:), inflow(:)
     trajectory = max(1,member)
@@ -333,7 +342,7 @@ contains
       end associate
     endif
 #ifdef SPMD
-    call MPI_Bcast(initialize,1,MPI_INTEGER,0,PETSC_COMM_WORLD,ierr)
+    call MPI_Bcast(initialize,1,LIS_MPI_INTEGER,0,PETSC_COMM_WORLD,ierr)
 #endif
     if (initialize == 1) then
       call gather_vector(ZV_QoutinitR,flow)
