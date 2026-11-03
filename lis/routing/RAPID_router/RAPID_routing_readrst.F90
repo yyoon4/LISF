@@ -15,6 +15,8 @@
 ! !REVISION HISTORY:
 ! 19 Jul 2021: Yeosang Yoon;  Initial implementation
 ! 20 Mar 2024: Yeosang Yoon; Support to run with ensemble mode
+! 03 Nov 2026: Yeosang Yoon; Read full dam restart state and support legacy
+!                          Qout-only files through estimated initialization.
 
 subroutine RAPID_routing_readrst
 

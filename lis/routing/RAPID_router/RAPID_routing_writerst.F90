@@ -18,6 +18,8 @@
 ! 13 Jul 2021: Yeosang Yoon;  Initial implementation
 ! 31 Aug 2022: Yeosang Yoon;  fix code to product rst file on time
 ! 20 Mar 2024: Yeosang Yoon; Support to run with ensemble mode
+! 03 Nov 2026: Yeosang Yoon; Define and write full dam restart state; correct
+!                          instantaneous Qout metadata.
 
 subroutine RAPID_routing_writerst(n)
 

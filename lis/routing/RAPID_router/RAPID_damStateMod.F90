@@ -10,6 +10,25 @@
 #include "LIS_misc.h"
 
 module RAPID_damStateMod
+!BOP
+!
+! !MODULE: RAPID_damStateMod
+!
+! !DESCRIPTION:
+!  Preserve reservoir and routing state across LIS coupling calls, ensemble
+!  trajectories, and NetCDF restarts. Estimate storage from initial discharge
+!  when no full reservoir restart state is available.
+!
+!  Source: Victor Roland supplied the Qinit-to-storage initialization law in
+!  standalone RAPID version B, src/rapid_init.F90. Its original patch date was
+!  not provided. This attribution covers the inverse law, not the LIS state
+!  management, NetCDF restart schema, or validation routines below.
+!
+! !REVISION HISTORY:
+! 03 Nov 2026: Yeosang Yoon: Initial LIS dam state management and restart I/O;
+!                          reuse Victor Roland's supplied initialization law.
+!
+!EOP
   use ESMF, only: ESMF_KIND_R8
   use RAPID_routingMod, only: RAPID_routing_struc
   use LIS_coreMod, only: LIS_rc

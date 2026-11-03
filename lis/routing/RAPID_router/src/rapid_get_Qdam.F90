@@ -10,6 +10,10 @@ subroutine rapid_get_Qdam
 !Communicate with a dam subroutine to exchange inflows and outflows.
 !Authors:
 !Cedric H. David and Ahmad A. Tavakoly, 2013-2020.
+! !REVISION HISTORY:
+! 03 Nov 2026: Yeosang Yoon: Use dam inflow preserved by the LIS state manager;
+!                          retain the original fallback with guarded indexing.
+!                          Existing release and storage equations are unchanged.
 
 
 !*******************************************************************************

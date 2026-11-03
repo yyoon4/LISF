@@ -5,6 +5,10 @@ Requires numpy and netCDF4. --self-test checks the comparison utility with
 temporary synthetic files, not the Fortran model or a reservoir simulation.
 """
 
+# REVISION HISTORY:
+# 03 Nov 2026: Yeosang Yoon: Initial restart-state comparison utility and
+#                          synthetic self-test; not part of LIS execution.
+
 import argparse
 from pathlib import Path
 import shutil

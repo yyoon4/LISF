@@ -13,6 +13,8 @@ module rapid_var
 
 ! !REVISION HISTORY:
 ! 08 Jul 2021: Yeosang Yoon: Add variables for weight table
+! 03 Nov 2026: Yeosang Yoon: Add a flag for dam inflow preserved across LIS
+!                          routing calls and ensemble trajectories.
 
 !*******************************************************************************
 !Fortran includes, modules, and implicity

@@ -18,6 +18,8 @@
 ! 26 Mar 2021: Yeosang Yoon: Initial implementation in LIS based on the
 !                            RAPID offline routing code (rapid_main.F90). 
 ! 20 Mar 2024: Yeosang Yoon: Support to run with ensemble mode
+! 03 Nov 2026: Yeosang Yoon: Restore and capture dam state at LIS routing calls;
+!                          correct basin-sized native restart flow indexing.
 
 !*******************************************************************************
 ! Subroutine- RAPID_model_main (rapid_main)

@@ -1,5 +1,14 @@
 = RAPID dam initialization and restart validation
 
+////
+REVISION HISTORY:
+03 Nov 2026: Yeosang Yoon: Document LIS dam state handling and Discover checks.
+SOURCE:
+Victor Roland supplied the standalone RAPID version B initialization law.
+The LIS state/restart implementation and comparison utility are attributed
+to Yeosang Yoon.
+////
+
 This development branch separates two changes:
 
 . Port Victor Roland's supplied Qinit-to-storage inversion to the existing LIS

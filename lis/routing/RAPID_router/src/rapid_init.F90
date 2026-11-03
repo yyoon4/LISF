@@ -36,6 +36,14 @@ subroutine rapid_init
 ! !REVISION HISTORY:
 ! 07 May 2021: Yeosang Yoon: Update log message
 ! 07 Jul 2021: Yeosang Yoon: Add memory allocation for weight table
+! 03 Nov 2026: Yeosang Yoon: Port Victor Roland's supplied Qinit-to-storage
+!                          initialization from standalone RAPID version B.
+! 03 Nov 2026: Yeosang Yoon: Share that initializer with native LIS restart
+!                          handling through RAPID_damStateMod.
+!
+! Source: Victor Roland, standalone RAPID version B, src/rapid_init.F90.
+!         The dates above record the LIS changes; the original patch date
+!         was not provided with the supplied source.
 
 !*******************************************************************************
 !Fortran includes, modules, and implicity

@@ -25,6 +25,8 @@ module RAPID_routingMod
 !                            RAPID offline routing code. 
 ! 25 Oct 2022: Yeosang Yoon: Support to run with LSM ensemble mean runoff variables
 ! 13 Jan 2023: Yeosang Yoon: Support to run with ensemble mode
+! 03 Nov 2026: Yeosang Yoon: Add double-precision dam state and restart metadata
+!                          separately for each routing trajectory.
 ! 
 ! !USES: 
   use ESMF
