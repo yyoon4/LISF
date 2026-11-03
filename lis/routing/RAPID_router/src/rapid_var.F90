@@ -38,6 +38,8 @@ logical :: BS_opt_hum
 !.false. --> no human-induced flows  .true. --> human-induced flows
 logical :: BS_opt_for
 !.false. --> no forcing              .true. --> forcing
+logical :: BS_lis_dam_inflow_ready = .false.
+!LIS supplies the previous interval dam inflow when it restores a trajectory.
 logical :: BS_opt_dam
 !.false. --> no dam model used       .true. --> dam model used
 logical :: BS_opt_influence

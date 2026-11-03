@@ -25,6 +25,7 @@ subroutine RAPID_routing_readrst
   use LIS_logMod
   use RAPID_routingMod, only : RAPID_routing_struc
   use netcdf
+  use RAPID_damStateMod, only: RAPID_dam_read_restart
 
   implicit none
 
@@ -63,6 +64,8 @@ subroutine RAPID_routing_readrst
                    RAPID_routing_struc(n)%Qout,(/1,1/),(/RAPID_routing_struc(n)%n_riv_bas,1/)),&
                    'Error in nf90_get_var in RAPID_routing_readrst')
            endif
+
+           call RAPID_dam_read_restart(n,ftn)
 
            ! Close the file
            call LIS_verify(nf90_close(ftn),'Error in nf90_close in RAPID_routing_readrst') 

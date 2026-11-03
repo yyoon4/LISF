@@ -34,6 +34,7 @@ subroutine RAPID_routing_writerst(n)
   use LIS_fileIOMod
   use LIS_timeMgrMod
   use RAPID_routingMod
+  use RAPID_damStateMod, only: RAPID_dam_define_restart, RAPID_dam_write_restart
 #if (defined USE_NETCDF3 || defined USE_NETCDF4)
   use netcdf
 #endif
@@ -129,7 +130,7 @@ subroutine RAPID_routing_writerst(n)
                         'Error in nf90_def_var_deflate for Qout in RAPID_routing_writerst')
 
         ! Define variable attributes
-        call LIS_verify(nf90_put_att(ftn,varid_Qout,'long_name','average river water discharge ' &
+        call LIS_verify(nf90_put_att(ftn,varid_Qout,'long_name','instantaneous river water discharge ' &
                         // 'downstream of each river reach'), 'nf90_put_att failed for long_name')
         call LIS_verify(nf90_put_att(ftn,varid_Qout,'unit','m3 s-1'), &
                         'nf90_put_att failed for unit')
@@ -137,7 +138,7 @@ subroutine RAPID_routing_writerst(n)
                         'nf90_put_att failed for coordinates')
         call LIS_verify(nf90_put_att(ftn,varid_Qout,'grid_mapping','crs'), &
                         'nf90_put_att failed for grid_mapping')
-        call LIS_verify(nf90_put_att(ftn,varid_Qout,'cell_methods','time: mean'), &
+        call LIS_verify(nf90_put_att(ftn,varid_Qout,'cell_methods','time: point'), &
                         'nf90_put_att failed for cell_methods')
 
         ! Define global attributes
@@ -163,6 +164,8 @@ subroutine RAPID_routing_writerst(n)
              "website: http://lis.gsfc.nasa.gov/"),&
              'nf90_put_att failed for comment')
 
+        call RAPID_dam_define_restart(n,ftn)
+
         ! End define mode. 
         call LIS_verify(nf90_enddef(ftn),'Error in ncf90_enddef in RAPID_routing_writerst')
 
@@ -176,6 +179,8 @@ subroutine RAPID_routing_writerst(n)
                     (/1,1/), (/RAPID_routing_struc(n)%n_riv_bas,1/))
            call LIS_verify(status,'Error in nf90_put_var in RAPID_routing_writerst')
         endif
+
+        call RAPID_dam_write_restart(n,ftn)
 
         ! Close the file.
         call LIS_verify(nf90_close(ftn), "Error in nf90_close in RAPID_routing_writerst")

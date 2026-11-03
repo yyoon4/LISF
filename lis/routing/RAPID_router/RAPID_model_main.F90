@@ -80,6 +80,7 @@ use LIS_coreMod, only: LIS_rc
 use LIS_logMod
 use LIS_timeMgrMod
 use RAPID_routingMod, only : RAPID_routing_struc
+use RAPID_damStateMod, only: RAPID_dam_restore, RAPID_dam_capture
 
 implicit none
 external rapid_phiroutine
@@ -180,7 +181,7 @@ if (initCheck .eqv. .true.) then
           allocate(Qinit(IS_riv_bas))
           Qinit=RAPID_routing_struc(n)%Qout
           call VecSetValues(ZV_QoutinitR,IS_riv_bas,IV_riv_loc1, &
-                            Qinit(IV_riv_index),INSERT_VALUES,ierr)
+                            Qinit,INSERT_VALUES,ierr)
           deallocate(Qinit)
       endif
       call VecAssemblyBegin(ZV_QoutinitR,ierr)
@@ -194,7 +195,7 @@ if (n_ens>0) then
       allocate(Qinit(IS_riv_bas))
       Qinit=RAPID_routing_struc(n)%Qout_ens(:,n_ens)
       call VecSetValues(ZV_QoutinitR,IS_riv_bas,IV_riv_loc1, &
-                        Qinit(IV_riv_index),INSERT_VALUES,ierr)
+                        Qinit,INSERT_VALUES,ierr)
       deallocate(Qinit)
    endif
    call VecAssemblyBegin(ZV_QoutinitR,ierr)
@@ -238,19 +239,12 @@ if (BS_opt_for) call rapid_open_Qfor_file(Qfor_file)
 if (BS_opt_hum) call rapid_open_Qhum_file(Qhum_file)
 
 !-------------------------------------------------------------------------------
-!Make sure the vectors potentially used for inflow to dams are initially null
+!Initialize transient routing work vectors. Dam inflow is retained separately
+!between LIS calls and restored only after the native LIS Qout injection above.
 !-------------------------------------------------------------------------------
-call VecSet(ZV_Qext,0*ZS_one,ierr)                         !Qext=0
-call VecSet(ZV_QoutbarR,0*ZS_one,ierr)                     !QoutbarR=0
-!This should be done by PETSc but just to be safe
-
-!-------------------------------------------------------------------------------
-!Set initial value of Qext from Qout_dam0
-!-------------------------------------------------------------------------------
-if (BS_opt_dam .and. IS_dam_bas>0) then
-     call rapid_set_Qext0                                  !Qext from Qout_dam0
-     !call VecView(ZV_Qext,PETSC_VIEWER_STDOUT_WORLD,ierr)
-end if
+call VecSet(ZV_Qext,0*ZS_one,ierr)
+call VecSet(ZV_QoutbarR,0*ZS_one,ierr)
+if (BS_opt_dam .and. IS_dam_bas>0) call RAPID_dam_restore(n,n_ens)
 
 !-------------------------------------------------------------------------------
 !Read, compute and write
@@ -333,6 +327,7 @@ ZS_time3=ZS_time3+ZS_time2-ZS_time1
 !- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 call VecCopy(ZV_QoutR,ZV_QoutinitR,ierr)
 call VecCopy(ZV_VR,ZV_VinitR,ierr)
+if (BS_opt_dam .and. IS_dam_bas>0) call RAPID_dam_capture(n,n_ens)
 
 !- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 !write outputs

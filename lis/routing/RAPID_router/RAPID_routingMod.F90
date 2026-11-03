@@ -89,6 +89,16 @@ module RAPID_routingMod
      real,allocatable    :: Qout(:)        ! instantaneous flow 
      real,allocatable    :: Qout_ens(:,:)  ! river outflow [m3/s], for ensemble mode
      integer             :: useens         ! ensemble mode
+
+     ! Full-precision dam state on the root, one column per routing trajectory.
+     ! inflow_next is Net*QoutbarR + Qext from the completed coupling interval.
+     integer, allocatable :: dam_ids(:), dam_river_ids(:)
+     real(ESMF_KIND_R8), allocatable :: dam_parameters(:,:)
+     real(ESMF_KIND_R8), allocatable :: dam_storage(:,:), dam_inflow_next(:,:)
+     real(ESMF_KIND_R8), allocatable :: dam_outflow_prev(:,:), dam_river_qout(:,:)
+     real(ESMF_KIND_R8) :: dam_tau = 0.0_8, dam_dt = 0.0_8
+     logical, allocatable :: dam_state_ready(:)
+     logical :: dam_restart_loaded = .false., dam_state_checked = .false.
 end type RAPID_routing_dec
 
   type(RAPID_routing_dec), allocatable :: RAPID_routing_struc(:)

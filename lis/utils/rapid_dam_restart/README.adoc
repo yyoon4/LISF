@@ -1,0 +1,86 @@
+= RAPID dam initialization and restart validation
+
+This development branch separates two changes:
+
+. Port Victor Roland's supplied Qinit-to-storage inversion to the existing LIS
+  `rapid_init` routine, preserving the LIS coupling additions.
+. Connect that initialization to native LIS restarts and preserve the full dam
+  state between coupling calls, ensemble members, and restarts.
+
+The inverse release law comes from standalone RAPID snapshot
+`22df7575a9d3b9c454c3e9e12547a70a964503ff`, `src/rapid_init.F90`.
+It is an estimated initial condition when Qinit is a river-flow proxy rather
+than a time-aligned reservoir release. It does not infer observed storage.
+
+== State and compatibility
+
+Dam-enabled regular runs retain these values separately for each trajectory
+(one for open loop/ensemble mean, one per member for ensemble mode 2):
+
+* Current reservoir storage.
+* Inflow to be consumed at the next coupling interval, computed as the dam
+  entries of `Net * QoutbarR + Qext` after the completed interval.
+* Previous dam outflow.
+* Full-precision instantaneous river discharge.
+
+Precomputing the next dam inflow avoids retaining two complete river vectors
+per member and prevents LIS's transient-vector resets from losing that inflow.
+The reservoir release and storage-update equations are unchanged.
+
+New restart files include schema attribute `rapid_dam_state_version=1`, dam and
+basin IDs, coefficients, time steps and double-precision dam/routing state.
+Changed dam ID order, basin order, coefficients, time steps, member counts,
+missing state or nonfinite values are errors. Restored storage above Smax is
+retained, because the existing forward model allows it; restart restoration
+must not apply the initialization clipping rule to actual saved state.
+
+Old Qout-only restart files remain readable. For dam-enabled runs they use the
+Victor inversion after LIS has injected the native restart discharge. The
+missing previous mean flow is approximated by the initial river discharge and
+the missing previous external inflow is zero. This fallback is logged and is
+not equivalent to a full-state restart. No restart-file conversion is required.
+
+Dam-disabled runs retain the existing restart schema. The native Qout injection
+also fixes the old second application of the total-domain river index to an
+already basin-sized restart array.
+
+The existing RAPID implementation uses process-global PETSc objects. This work
+does not establish support for multiple simultaneously active RAPID nests, nor
+does it enable optimization/internal DA modes. Begin validation with one nest,
+regular mode 1 and matrix routing mode 1. Do not change production configuration
+or claim the previously unsupported dam option validated before these checks.
+
+== Validation on Discover
+
+Build LIS normally with its existing ESMF, netCDF and PETSc/MPI Fortran toolchain.
+No Docker or standalone RAPID build is required. This change has not been
+compiled or run with LIS on the authoring machine.
+
+. First run dam-off with the same inputs as master. Confirm unchanged output,
+  and test a true basin subset to exercise the restart-index correction.
+. Run dam-on continuously to an end time T2. Save its restart at T1 and T2.
+  Choose T1/T2 on completed routing coupling boundaries and use restart intervals
+  aligned with the RAPID model interval; this change does not alter LIS alarms.
+. Start a second run from the new full-state T1 restart, with identical inputs,
+  configuration, IDs and coefficients, and end at T2.
+. Compare T2 restarts with the utility below. Also inspect downstream discharge
+  and cumulative water balance; equality of the restart state alone does not
+  validate the physical parameterization.
+. Repeat with one and multiple ranks, then ensemble modes 1 and 2. Compare each
+  ensemble member with an independent run using the same member runoff, and
+  repeat with member order reversed to detect state leakage.
+. Exercise legacy Qout-only restart fallback separately. Expect an initialization
+  approximation, not equality with a saved full-state restart.
+. Verify rejection of changed IDs, dam parameters, time steps or member counts.
+
+With Python, NumPy and netCDF4 available:
+
+----
+python lis/utils/rapid_dam_restart/check_restart.py continuous_T2.nc split_T2.nc
+python lis/utils/rapid_dam_restart/check_restart.py --self-test
+----
+
+The self-test validates only the comparison utility with temporary synthetic
+state files. It is not a LIS/PETSc integration test and does not simulate a dam.
+Input data, output data and experiment configuration files are kept outside
+the repository according to the contribution guidelines.

@@ -85,10 +85,10 @@ use rapid_var, only :                                                          &
                    ierr,ksp,rank,IS_one,ZS_one,                                &
                    IS_radius,ZV_riv_tot_cdownQlat,                             &
                    IV_nbrows,IV_lastrow,                                       &
-                   n_weight_table,rivid,npt,idx_i,idx_j,area_sqm,lat,lon,     &
-                   vecscat,ZV_SeqZero,ZV_pointer,IV_dam_pos
+                   n_weight_table,rivid,npt,idx_i,idx_j,area_sqm,lat,lon
 
 use LIS_logMod
+use RAPID_damStateMod, only: RAPID_dam_warm_start
 
 implicit none
 
@@ -471,38 +471,8 @@ end do
 close(24)
 
 if (BS_opt_Qinit) then
-!Initialize dam storage from Qinit by inverting the Doll et al. (2003) Eq. (6):
-!   Qout = (k/TauR)*(S-Smin)*((S-Smin)/(Smax-Smin))^p
-!Solving for S:
-!   S = Smin + (Qout*TauR*(Smax-Smin)^p/k)^(1/(1+p))
-call VecScatterBegin(vecscat,ZV_QoutinitM,ZV_SeqZero,                         &
-                     INSERT_VALUES,SCATTER_FORWARD,ierr)
-call VecScatterEnd(vecscat,ZV_QoutinitM,ZV_SeqZero,                           &
-                   INSERT_VALUES,SCATTER_FORWARD,ierr)
-call VecGetArrayF90(ZV_SeqZero,ZV_pointer,ierr)
-if (rank==0) then
-do JS_dam_tot=1,IS_dam_tot
-   if (IV_dam_pos(JS_dam_tot) > 0) then
-      ZV_Qout_dam0(JS_dam_tot)=ZV_pointer(IV_dam_pos(JS_dam_tot))
-      if (ZV_Qout_dam0(JS_dam_tot) > 0.0) then
-         ZV_S_dam(JS_dam_tot) = ZV_Smin_dam(JS_dam_tot)                        &
-              + ( ZV_Qout_dam0(JS_dam_tot) * ZS_TauR                           &
-                 *(ZV_Smax_dam(JS_dam_tot)-ZV_Smin_dam(JS_dam_tot))            &
-                 **ZV_p_dam(JS_dam_tot) / ZV_k_dam(JS_dam_tot)                 &
-                ) ** (1.0_8/(1.0_8+ZV_p_dam(JS_dam_tot)))
-         ZV_S_dam(JS_dam_tot) = min(ZV_S_dam(JS_dam_tot),                      &
-                                    ZV_Smax_dam(JS_dam_tot))
-         ZV_S_dam(JS_dam_tot) = max(ZV_S_dam(JS_dam_tot),                      &
-                                    ZV_Smin_dam(JS_dam_tot))
-      else
-         ZV_S_dam(JS_dam_tot) = ZV_Smin_dam(JS_dam_tot)
-      end if
-   else
-      ZV_S_dam(JS_dam_tot) = ZV_Smin_dam(JS_dam_tot)
-   end if
-end do
-end if
-call VecRestoreArrayF90(ZV_SeqZero,ZV_pointer,ierr)
+!Victor Roland's inverse release law; shared with the LIS restart fallback.
+call RAPID_dam_warm_start(ZV_QoutinitM)
 else
 ZV_S_dam=ZV_Smin_dam
 !Initialize all dam storage to the minimum storage (no Qinit provided)

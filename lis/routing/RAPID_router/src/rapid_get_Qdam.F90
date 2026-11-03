@@ -26,7 +26,7 @@ use rapid_var, only :                                                          &
                    JS_dam_tot,IS_dam_tot,                                      &
                    ZV_Qout_dam,ZV_Qin_dam_prev,ZV_Qout_dam_prev,               &
                    ZV_k_dam,ZV_p_dam,ZV_S_dam,ZV_Smax_dam,ZV_Smin_dam,         &
-                   ZS_TauR
+                   ZS_TauR,BS_lis_dam_inflow_ready
 implicit none
 
 
@@ -41,6 +41,9 @@ implicit none
 !-------------------------------------------------------------------------------
 !Compute inflow into dams from previous river flow
 !-------------------------------------------------------------------------------
+!LIS carries the already-computed inflow across calls and ensemble members.
+!Keep the original calculation available for callers without that state.
+if (.not. BS_lis_dam_inflow_ready) then
 call MatMult(ZM_Net,ZV_QoutbarR,ZV_QinbarR,ierr)           
 call VecAXPY(ZV_QinbarR,ZS_one,ZV_Qext,ierr)
 !QinbarR=Net*QoutbarR+Qext
@@ -54,8 +57,14 @@ call VecScatterBegin(vecscat,ZV_QinbarR,ZV_SeqZero,                            &
 call VecScatterEnd(vecscat,ZV_QinbarR,ZV_SeqZero,                              &
                         INSERT_VALUES,SCATTER_FORWARD,ierr)
 call VecGetArrayF90(ZV_SeqZero,ZV_pointer,ierr)
-if (rank==0) ZV_Qin_dam_prev=ZV_pointer(IV_dam_pos) 
+if (rank==0) then
+     do JS_dam_tot=1,IS_dam_tot
+          if (IV_dam_pos(JS_dam_tot)>0) &
+               ZV_Qin_dam_prev(JS_dam_tot)=ZV_pointer(IV_dam_pos(JS_dam_tot))
+     end do
+end if
 call VecRestoreArrayF90(ZV_SeqZero,ZV_pointer,ierr)
+end if
 !Get values from ZV_QinbarR (PETSc) into ZV_Qin_dam_prev (Fortran)
 
 
