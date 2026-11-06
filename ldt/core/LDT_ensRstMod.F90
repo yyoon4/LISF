@@ -344,21 +344,8 @@ module LDT_ensRstMod
 
          if(LDT_rc%ensrstsampling.eq."random sampling") then
             allocate(var_map(dims(1)*LDT_rc%nens_out/LDT_rc%nens_in))
-            do i=1,dims(1)/LDT_rc%nens_in
-               do m=1,LDT_rc%nens_out
-                  t2 = (i-1)*LDT_rc%nens_out+m
-                  if(m.gt.LDT_rc%nens_in) then 
-                     !randomly select an ensemble member
-                     call nr_ran2(seed, rand)
-                     m1 = 1+nint(rand*(LDT_rc%nens_in-1))
-                     t1 = (i-1)*LDT_rc%nens_in+m1
-                     var_map(t2) = t1
-                  else
-                     t1 = (i-1)*LDT_rc%nens_in+m
-                     var_map(t2) = t1
-                  endif
-               enddo
-            enddo
+            call build_random_ensemble_map(dims(1),LDT_rc%nens_in,&
+                 LDT_rc%nens_out,.true.,seed,var_map)
          ! To avoid speckling issues, only use last ensemble member
          elseif(LDT_rc%ensrstsampling.eq."unperturbed sampling") then
             allocate(var_map(dims(1)*LDT_rc%nens_out/LDT_rc%nens_in))
@@ -569,21 +556,8 @@ module LDT_ensRstMod
 
             if(LDT_rc%ensrstsampling.eq."random sampling") then
                allocate(var_map(dims(1)*LDT_rc%nens_out/LDT_rc%nens_in))
-               do i=1,dims(1)/LDT_rc%nens_in
-                  do m=1,LDT_rc%nens_out
-                     t2 = (i-1)*LDT_rc%nens_out+m
-                     if(m.gt.LDT_rc%nens_in) then
-                        !randomly select an ensemble member
-                        call nr_ran2(seed, rand)
-                        m1 = 1+nint(rand*(LDT_rc%nens_in-1))
-                        t1 = (i-1)*LDT_rc%nens_in+m1
-                        var_map(t2) = t1
-                     else
-                        t1 = (i-1)*LDT_rc%nens_in+m
-                        var_map(t2) = t1
-                     endif
-                  enddo
-               enddo            
+               call build_random_ensemble_map(dims(1),LDT_rc%nens_in,&
+                    LDT_rc%nens_out,.true.,seed,var_map)
             endif
          
             do k=1,nVars
@@ -889,13 +863,11 @@ module LDT_ensRstMod
    character*8           :: beg_date
    character*6           :: beg_time
    character*50          :: tIncr
-   integer               :: k,t,m,i,j,p
+   integer               :: k,t,m,i,j
    integer               :: m1, t1,t2
    integer               :: nc, nr
-   integer               :: st, en
    logical               :: file_exists
    integer,     allocatable  :: var_map(:)
-   logical                   :: cycl_check
    logical                   :: dupl_check
    integer               :: seed(NRANDSEED)
    real                  :: rand
@@ -1056,37 +1028,8 @@ module LDT_ensRstMod
   
       if(LDT_rc%ensrstsampling.eq."random sampling") then
          allocate(var_map(dims(1)*LDT_rc%nens_out/LDT_rc%nens_in))
-         var_map = -1
-         do i=1,dims(1)/LDT_rc%nens_in
-            st = (i-1)*LDT_rc%nens_out+1
-            en = (i-1)*LDT_rc%nens_out+LDT_rc%nens_out
-
-            do m=1,LDT_rc%nens_out
-               t2 = (i-1)*LDT_rc%nens_out+m
-               cycl_check = .true. 
-
-               do while(cycl_check) 
-                  !randomly select an ensemble member                  
-                  call nr_ran2(seed, rand)
-                  m1 = 1+nint(rand*(LDT_rc%nens_in-1))
-                  t1 = (i-1)*LDT_rc%nens_in+m1
-
-                  dupl_check =.false. 
-                  do p=st,en
-                     if(t1.eq.var_map(p)) then
-                        dupl_check = .true.
-                     endif
-                  enddo
-                  if(dupl_check) then
-                     cycl_check = .true.
-                  else
-                     cycl_check = .false.
-                  endif
-               enddo
-               
-               var_map(t2) = t1
-            enddo
-         enddo
+         call build_random_ensemble_map(dims(1),LDT_rc%nens_in,&
+              LDT_rc%nens_out,.false.,seed,var_map)
       ! To avoid speckling issues, only use last ensemble member
       elseif(LDT_rc%ensrstsampling.eq."unperturbed sampling") then
          allocate(var_map(dims(1)*LDT_rc%nens_out/LDT_rc%nens_in))
@@ -1338,38 +1281,8 @@ module LDT_ensRstMod
   
          if(LDT_rc%ensrstsampling.eq."random sampling") then
             allocate(var_map(dims(1)*LDT_rc%nens_out/LDT_rc%nens_in))
-            var_map = -1
-            do i=1,dims(1)/LDT_rc%nens_in
-               
-               st = (i-1)*LDT_rc%nens_out+1
-               en = (i-1)*LDT_rc%nens_out+LDT_rc%nens_out
-               
-               do m=1,LDT_rc%nens_out
-                  t2 = (i-1)*LDT_rc%nens_out+m
-                  cycl_check = .true. 
-                  
-                  do while(cycl_check) 
-                     !randomly select an ensemble member                  
-                     call nr_ran2(seed, rand)
-                     m1 = 1+nint(rand*(LDT_rc%nens_in-1))
-                     t1 = (i-1)*LDT_rc%nens_in+m1
-                     
-                     dupl_check =.false. 
-                     do p=st,en
-                        if(t1.eq.var_map(p)) then
-                           dupl_check = .true.
-                        endif
-                     enddo
-                     if(dupl_check) then
-                        cycl_check = .true.
-                     else
-                        cycl_check = .false.
-                     endif
-                  enddo
-                  
-                  var_map(t2) = t1
-               enddo
-            enddo
+            call build_random_ensemble_map(dims(1),LDT_rc%nens_in,&
+                 LDT_rc%nens_out,.false.,seed,var_map)
          endif
          
          
@@ -1595,6 +1508,49 @@ module LDT_ensRstMod
         trim(LDT_rc%outputrst)
 
  end subroutine downscale_ensembleRst
+
+
+ subroutine build_random_ensemble_map(ntiles,nens_in,nens_out,upscale,&
+      seed,var_map)
+
+   integer, intent(in)    :: ntiles,nens_in,nens_out
+   logical, intent(in)    :: upscale
+   integer, intent(inout) :: seed(NRANDSEED)
+   integer, intent(out)   :: var_map(ntiles*nens_out/nens_in)
+   integer               :: selected(nens_out)
+   integer               :: i,m,m1,t2
+   real                  :: rand
+
+   ! Select once for the whole restart, so each output member retains
+   ! the spatial structure of one input member across all tiles.
+   selected = -1
+   do m=1,nens_out
+      if(upscale.and.m.le.nens_in) then
+         ! Retain the existing members when increasing the ensemble size.
+         selected(m) = m
+      else
+         do
+            call nr_ran2(seed, rand)
+            m1 = 1+nint(rand*(nens_in-1))
+            if(.not.upscale) then
+               ! Downscaling samples without replacement.
+               if(any(selected.eq.m1)) cycle
+            endif
+            selected(m) = m1
+            exit
+         enddo
+      endif
+   enddo
+
+   ! Reuse the same member list at every tile and for every variable.
+   do i=1,ntiles/nens_in
+      do m=1,nens_out
+         t2 = (i-1)*nens_out+m
+         var_map(t2) = (i-1)*nens_in+selected(m)
+      enddo
+   enddo
+
+ end subroutine build_random_ensemble_map
 
 
  subroutine writeglobalheader(ftn,model_name, &
