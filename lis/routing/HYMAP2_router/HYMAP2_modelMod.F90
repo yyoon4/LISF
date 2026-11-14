@@ -632,7 +632,7 @@ contains
       do while(vol>fldstomax(i))
         i=i+1
         if(i>nz)then
-          elv=dph(nz)+(vol-fldstomax(nz))/(grarea-rivlen*rivwth)
+          elv=dph(nz)+(vol-fldstomax(nz))/grarea
           goto 1
         endif
       enddo
