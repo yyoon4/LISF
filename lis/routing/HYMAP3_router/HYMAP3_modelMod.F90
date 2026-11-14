@@ -181,8 +181,8 @@ contains
     real,    intent(in)  ::  dt
     real,    intent(in)  ::  fldfrc !area fraction
     real,    intent(in)  ::  runoff !runoff of the grid [m3/s]
-    real,    intent(out) ::  rivsto !river storage [m3]
-    real,    intent(out) ::  fldsto !floodplain storage [m3]
+    real,    intent(inout) ::  rivsto !river storage [m3]
+    real,    intent(inout) ::  fldsto !floodplain storage [m3]
 
     real                 ::  rrivrof,rfldrof
 
@@ -727,8 +727,8 @@ contains
     real,    intent(in)  ::  fldout      ! floodplain outflow    [m3/s]
     real,    intent(in)  ::  rivinf      !river inflow         [m3/s]
     real,    intent(in)  ::  fldinf      !floodplain inflow    [m3/s]
-    real,    intent(out) ::  rivsto      !river storage of current time step       [m3]
-    real,    intent(out) ::  fldsto      !flood plain storage [m3]
+    real,    intent(inout) ::  rivsto      !river storage of current time step       [m3]
+    real,    intent(inout) ::  fldsto      !flood plain storage [m3]
     ! ================================================
 
     rivsto=max(0.,rivsto+(rivinf-rivout)*dt)
