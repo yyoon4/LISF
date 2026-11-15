@@ -50,7 +50,7 @@ subroutine HYMAP2_updateSWOT(n, Routing_State, Routing_Incr_State)
   real, pointer          :: sfcelev(:)
   real, pointer          :: sfcelevIncr(:)
   real, allocatable      :: sfcelevIncr_tmp(:)
-  integer, allocatable   :: nsfcelevIncr_tmp(:)
+  logical, allocatable   :: hasWeight(:)
   integer                :: t,i,i1,m
   integer                :: ix,iy
   integer                :: c,r,c1,c2,r1,r2,t1
@@ -58,8 +58,7 @@ subroutine HYMAP2_updateSWOT(n, Routing_State, Routing_Incr_State)
   integer                :: status
 
   real                   :: localWeight(LIS_rc%lnc(n),LIS_rc%lnr(n))
-  real, allocatable      :: checkWeight(:,:)
-  integer                :: max_index
+  real, allocatable      :: bestWeight(:)
   real                   :: thresh
 
   call ESMF_StateGet(Routing_State,"Surface elevation",sfcelevField,rc=status)
@@ -79,12 +78,13 @@ subroutine HYMAP2_updateSWOT(n, Routing_State, Routing_Incr_State)
        "ESMF_FieldGet: Surface elevation failed in HYMAP2_updateSWOT")
 
   allocate(sfcelevIncr_tmp(HYMAP2_routing_struc(n)%nseqall*LIS_rc%nensem(n)))
-  allocate(nsfcelevIncr_tmp(HYMAP2_routing_struc(n)%nseqall*LIS_rc%nensem(n)))
-  allocate(checkWeight(HYMAP2_routing_struc(n)%nseqall*LIS_rc%nensem(n), &
-           HYMAP2_daSWOT_struc(n)%localupdDX*HYMAP2_daSWOT_struc(n)%localupdDX))
   sfcelevIncr_tmp = 0.0
-  nsfcelevIncr_tmp = 0
-  checkWeight = 0.0
+  if (HYMAP2_daSWOT_struc(n)%useLocalUpd.eq.1) then
+     allocate(hasWeight(size(sfcelevIncr_tmp)))
+     allocate(bestWeight(size(sfcelevIncr_tmp)))
+     hasWeight = .false.
+     bestWeight = 0.0
+  endif
   thresh = 5.0  ! upper update limit
 
   do i=1,HYMAP2_routing_struc(n)%nseqall
@@ -132,19 +132,15 @@ subroutine HYMAP2_updateSWOT(n, Routing_State, Routing_Incr_State)
                              localweight(c,r).ne.-9999.0.and.&
                              localweight(ix,iy).ne.-9999.0) then
 
-                             nsfcelevIncr_tmp(t1) = nsfcelevIncr_tmp(t1) + 1
-                             checkWeight(t1, nsfcelevIncr_tmp(t1)) = &
-                                  localweight(c,r)
-                             if (nsfcelevIncr_tmp(t1) > 1) then
-                                max_index= &
-                                     maxloc(checkWeight(t1, &
-                                     :nsfcelevIncr_tmp(t1)), dim=1)
-                                if (max_index .eq. &
-                                     nsfcelevIncr_tmp(t1)) then
-                                   sfcelevIncr_tmp(t1) = &
-                                        sfcelevIncr(t)*localweight(c,r)
-                                endif
-                             else
+                             ! Keep the first source on an equal-weight tie,
+                             ! matching MAXLOC without a contributor history.
+                             if (.not.hasWeight(t1)) then
+                                hasWeight(t1) = .true.
+                                bestWeight(t1) = localweight(c,r)
+                                sfcelevIncr_tmp(t1) = &
+                                     sfcelevIncr(t)*localweight(c,r)
+                             elseif (localweight(c,r)>bestWeight(t1)) then
+                                bestWeight(t1) = localweight(c,r)
                                 sfcelevIncr_tmp(t1) = &
                                      sfcelevIncr(t)*localweight(c,r)
                              endif
@@ -172,7 +168,7 @@ subroutine HYMAP2_updateSWOT(n, Routing_State, Routing_Incr_State)
   enddo
 
  deallocate(sfcelevIncr_tmp)
- deallocate(nsfcelevIncr_tmp)
- deallocate(checkWeight)
+  if (allocated(hasWeight)) deallocate(hasWeight)
+  if (allocated(bestWeight)) deallocate(bestWeight)
 
 end subroutine HYMAP2_updateSWOT

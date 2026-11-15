@@ -1444,13 +1444,11 @@ module gmaopert_Mod
             elseif(id.eq.4) then !routing state space
                std(i,:,:) = 0.0 
                do t=1,LIS_rc%ngrid(n)
-                  do m=1, LIS_rc%nensem(n)
-                     col = LIS_domain(n)%grid(t)%col
-                     row = LIS_domain(n)%grid(t)%row
+                  col = LIS_domain(n)%grid(t)%col
+                  row = LIS_domain(n)%grid(t)%row
 
-                     std(i,col,row) = std(i,col,row) + &
-                          std1(t)
-                  enddo
+                  ! Routing standard deviation is specified once per grid cell.
+                  std(i,col,row) = std1(t)
                enddo
             endif
          enddo

@@ -41,6 +41,8 @@ module HYMAP3_daSWOT_Mod
      integer                :: nsites
      integer                :: useLocalUpd
      integer                :: localUpdDX
+     character(len=32)      :: weightingMethod = "area-max"
+     real                   :: distanceCutoffKm = 0.0
      real, allocatable      :: sites(:,:)
      real, allocatable      :: localWeight(:,:,:)
 
@@ -59,6 +61,7 @@ contains
 ! !USES:
     use ESMF
     use LIS_constantsMod, only: LIS_CONST_PATH_LEN
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use LIS_coreMod
     use LIS_logMod, only: lis_verify, lis_endrun, LIS_logunit
 #if (defined USE_NETCDF3 || defined USE_NETCDF4)
@@ -96,6 +99,50 @@ contains
                "HYMAP3 use localization update in DA: not defined")
        enddo
 
+       ! Optional labels: old configurations retain the exact area-map path.
+       call ESMF_ConfigFindLabel(LIS_config,&
+            "HYMAP3 localization weighting method:",rc=status)
+       if(status.eq.0) then
+          do n=1,LIS_rc%nnest
+             call ESMF_ConfigGetAttribute(LIS_config,&
+                  HYMAP3_daSWOT_struc(n)%weightingMethod,rc=status)
+             call LIS_verify(status,"Invalid HYMAP3 localization weighting method")
+          enddo
+       endif
+       call ESMF_ConfigFindLabel(LIS_config,&
+            "HYMAP3 localization distance cutoff (km):",rc=status)
+       if(status.eq.0) then
+          do n=1,LIS_rc%nnest
+             call ESMF_ConfigGetAttribute(LIS_config,&
+                  HYMAP3_daSWOT_struc(n)%distanceCutoffKm,rc=status)
+             call LIS_verify(status,"Invalid HYMAP3 localization distance cutoff")
+          enddo
+       endif
+       do n=1,LIS_rc%nnest
+          select case(trim(HYMAP3_daSWOT_struc(n)%weightingMethod))
+          case("area-max")
+          case("area-distance-max")
+             if(HYMAP3_daSWOT_struc(n)%useLocalUpd.eq.1) then
+                if(.not.ieee_is_finite(HYMAP3_daSWOT_struc(n)%distanceCutoffKm)) then
+                   call HYMAP3_localization_error("Distance cutoff must be finite and positive")
+                endif
+                if(HYMAP3_daSWOT_struc(n)%distanceCutoffKm.le.0.0) then
+                   call HYMAP3_localization_error("Distance cutoff must be finite and positive")
+                endif
+#if !(defined USE_NETCDF3 || defined USE_NETCDF4)
+                call HYMAP3_localization_error("Distance localization requires NetCDF support")
+#endif
+             endif
+          case default
+             call HYMAP3_localization_error("Unknown localization weighting method")
+          end select
+          if(HYMAP3_daSWOT_struc(n)%useLocalUpd.eq.1) then
+             write(LIS_logunit,*) "[INFO] HYMAP3 localization weighting: nest=",n,&
+                  " method=",trim(HYMAP3_daSWOT_struc(n)%weightingMethod),&
+                  " cutoff(km)=",HYMAP3_daSWOT_struc(n)%distanceCutoffKm
+          endif
+       enddo
+
        local_upd_flag = .false.
        do n=1,LIS_rc%nnest
           if(HYMAP3_daSWOT_struc(n)%useLocalUpd.eq.1) then
@@ -120,6 +167,8 @@ contains
                   localWeightMap,rc=status)
              call LIS_verify(status,&
                   "HYMAP3 localization weight map: not defined")
+             ! Consume each nest's map token, but disabled nests need no map.
+             if(HYMAP3_daSWOT_struc(n)%useLocalUpd.ne.1) cycle
 #if (defined USE_NETCDF3 || defined USE_NETCDF4)
 
              inquire(file=localWeightMap, exist=file_exists)
@@ -164,15 +213,20 @@ contains
                 status = nf90_inq_varid(nid,'sites',sid)
                 call LIS_verify(status, &
                      'sites field not found in the localization weight file')
+                ! Keep only this MPI rank's halo-inclusive localization weights.
                 allocate(HYMAP3_daSWOT_struc(n)%localWeight(&
-                     LIS_rc%gnc(n), LIS_rc%gnr(n), &
+                     LIS_rc%lnc(n), LIS_rc%lnr(n), &
                      HYMAP3_daSWOT_struc(n)%nsites))
 
                 allocate(HYMAP3_daSWOT_struc(n)%sites( &
                      LIS_rc%lnc(n), LIS_rc%lnr(n)))
 
                 status = nf90_get_var(nid,drainid,&
-                     HYMAP3_daSWOT_struc(n)%localWeight)
+                     HYMAP3_daSWOT_struc(n)%localWeight, &
+                     start=(/LIS_ews_halo_ind(n,LIS_localPet+1), &
+                     LIS_nss_halo_ind(n,LIS_localPet+1),1/), &
+                     count=(/LIS_rc%lnc(n),LIS_rc%lnr(n), &
+                     HYMAP3_daSWOT_struc(n)%nsites/))
                 call LIS_verify(status, &
                      'Error in nf90_get_var in HYMAP3_daSWOT_Mod')
 
@@ -187,6 +241,10 @@ contains
 
                 call LIS_verify(status, &
                      'Error in nf90_get_var in HYMAP3_daSWOT_Mod')
+
+                if(trim(HYMAP3_daSWOT_struc(n)%weightingMethod).eq."area-distance-max") then
+                   call HYMAP3_taper_localization_weights(n,nid,drainid,ncId,nrId,siteId)
+                endif
 
                 status = nf90_close(nid)
                 call LIS_verify(status, &
@@ -203,4 +261,99 @@ contains
        endif
     endif
   end subroutine HYMAP3_daSWOT_init
+
+  subroutine HYMAP3_localization_error(message)
+    use LIS_logMod, only: LIS_logunit,LIS_endrun
+    implicit none
+    character(len=*),intent(in) :: message
+    write(LIS_logunit,*) "[ERR] HYMAP3 localization: ",trim(message)
+    call LIS_endrun
+  end subroutine HYMAP3_localization_error
+
+#if (defined USE_NETCDF3 || defined USE_NETCDF4)
+  subroutine HYMAP3_taper_localization_weights(n,nid,weightId,ncId,nrId,siteDimId)
+    use netcdf
+    use LIS_coreMod
+    use LIS_logMod, only: LIS_verify
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    implicit none
+    integer,intent(in) :: n,nid,weightId,ncId,nrId,siteDimId
+    integer :: distanceId,status,ndims,weightDims(3),distanceDims(3)
+    integer :: c,r,s,nx,ny,gx,gy,nc,nr
+    character(len=32) :: units
+    real(kind=8),allocatable :: distance(:,:)
+    real(kind=8) :: missingDistance,cutoff,pi,taper,d
+    real :: w
+
+    ! Validate only the opt-in path; do not add NetCDF lookups in area-max.
+    status=nf90_inquire_variable(nid,weightId,ndims=ndims)
+    call LIS_verify(status,"Unable to inspect localization weight dimensions")
+    if(ndims.ne.3) call HYMAP3_localization_error("Weight must have three dimensions")
+    status=nf90_inquire_variable(nid,weightId,dimids=weightDims)
+    call LIS_verify(status,"Unable to inspect localization weight axes")
+    if(any(weightDims.ne.(/ncId,nrId,siteDimId/))) then
+       call HYMAP3_localization_error("Weight axes must be east_west,north_south,count in Fortran")
+    endif
+    status=nf90_inquire_dimension(nid,ncId,len=nc)
+    call LIS_verify(status,"Unable to inspect localization grid width")
+    status=nf90_inquire_dimension(nid,nrId,len=nr)
+    call LIS_verify(status,"Unable to inspect localization grid height")
+    if(nc.ne.LIS_rc%gnc(n).or.nr.ne.LIS_rc%gnr(n)) then
+       call HYMAP3_localization_error("Localization map must match the global model grid")
+    endif
+    status=nf90_inq_varid(nid,"network_distance_km",distanceId)
+    call LIS_verify(status,"area-distance-max requires network_distance_km")
+    status=nf90_inquire_variable(nid,distanceId,ndims=ndims)
+    call LIS_verify(status,"Unable to inspect network_distance_km dimensions")
+    if(ndims.ne.3) call HYMAP3_localization_error("network_distance_km must have three dimensions")
+    status=nf90_inquire_variable(nid,distanceId,dimids=distanceDims)
+    call LIS_verify(status,"Unable to inspect network_distance_km axes")
+    if(any(distanceDims.ne.weightDims)) then
+       call HYMAP3_localization_error("network_distance_km axes must match weight")
+    endif
+    units=""
+    status=nf90_get_att(nid,distanceId,"units",units)
+    call LIS_verify(status,"network_distance_km requires units=km")
+    if(trim(adjustl(units)).ne."km") call HYMAP3_localization_error("network_distance_km units must be km")
+    status=nf90_get_att(nid,distanceId,"_FillValue",missingDistance)
+    call LIS_verify(status,"network_distance_km requires _FillValue=-9999")
+    if(.not.ieee_is_finite(missingDistance)) call HYMAP3_localization_error("Invalid distance fill value")
+    if(missingDistance.ne.-9999.0_8) call HYMAP3_localization_error("Distance fill value must be -9999")
+
+    nx=size(HYMAP3_daSWOT_struc(n)%localWeight,1)
+    ny=size(HYMAP3_daSWOT_struc(n)%localWeight,2)
+    gx=LIS_ews_halo_ind(n,LIS_localPet+1)
+    gy=LIS_nss_halo_ind(n,LIS_localPet+1)
+    if(gx.lt.1.or.gy.lt.1.or.gx+nx-1.gt.nc.or.gy+ny-1.gt.nr) then
+       call HYMAP3_localization_error("Distance hyperslab lies outside the map")
+    endif
+    allocate(distance(nx,ny))
+    cutoff=dble(HYMAP3_daSWOT_struc(n)%distanceCutoffKm)
+    pi=acos(-1.0_8)
+    do s=1,HYMAP3_daSWOT_struc(n)%nsites
+       ! Reuse one 2-D distance slice; never allocate another full 3-D map.
+       status=nf90_get_var(nid,distanceId,distance,&
+            start=(/gx,gy,s/),count=(/nx,ny,1/))
+       call LIS_verify(status,"Unable to read network_distance_km slice")
+       do r=1,ny
+          do c=1,nx
+             w=HYMAP3_daSWOT_struc(n)%localWeight(c,r,s)
+             if(w.eq.-9999.0) cycle
+             if(.not.ieee_is_finite(w)) call HYMAP3_localization_error("Nonfinite base localization weight")
+             if(w.lt.0.0.or.w.gt.1.0) call HYMAP3_localization_error("Base localization weight outside [0,1]")
+             d=distance(c,r)
+             if(.not.ieee_is_finite(d)) then
+                HYMAP3_daSWOT_struc(n)%localWeight(c,r,s)=-9999.0
+             elseif(d.lt.0.0_8.or.d.ge.cutoff) then
+                HYMAP3_daSWOT_struc(n)%localWeight(c,r,s)=-9999.0
+             else
+                taper=0.5_8*(1.0_8+cos(pi*d/cutoff))
+                HYMAP3_daSWOT_struc(n)%localWeight(c,r,s)=real(dble(w)*taper)
+             endif
+          enddo
+       enddo
+    enddo
+    deallocate(distance)
+  end subroutine HYMAP3_taper_localization_weights
+#endif
 end module HYMAP3_daSWOT_Mod
