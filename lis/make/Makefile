@@ -60,6 +60,14 @@ DEPGEN_FLAGS += --exclude-finc-files mpif.h,netcdf.inc,CXMLDEF.FOR,mkl_vml.f90
 
 include ./configure.lis
 
+# Test-only read-only mass diagnostics; preserve configured optimization.
+# Usage: HYMAP3_MASS_DIAG=1 ./compile (from lis/ after a separate clean build).
+ifeq ($(HYMAP3_MASS_DIAG),1)
+FFLAGS += -DHYMAP3_MASS_DIAG
+LIS_routingMod.o HYMAP3_setSWOT.o HYMAP3_updateSWOT.o HYMAP3_routing_run.o HYMAP3_model_core.o: WM_mass_diag_mod.o
+endif
+WM_hymap_bridge.o: WM_mass_diag_mod.o
+
 # Define goals.
 LIS: $(OBJS)
 	 $(FC) -o $@ $(OBJS) $(FOPTS) $(LDFLAGS)

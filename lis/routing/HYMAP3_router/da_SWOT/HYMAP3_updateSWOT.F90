@@ -18,6 +18,10 @@
 ! !INTERFACE:
 subroutine HYMAP3_updateSWOT(n, Routing_State, Routing_Incr_State)
 ! !USES:
+
+#ifdef HYMAP3_MASS_DIAG
+  use WM_mass_diag_mod, only: wm_context,wm_member
+#endif
   use ESMF
   use HYMAP3_daSWOT_Mod, only: HYMAP3_daSWOT_struc
   use HYMAP3_routingMod, only: HYMAP3_routing_struc
@@ -80,6 +84,10 @@ subroutine HYMAP3_updateSWOT(n, Routing_State, Routing_Incr_State)
   call LIS_verify(status,&
        "ESMF_FieldGet: Surface elevation failed in HYMAP3_updateSWOT")
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_vector('DA_INCREMENT_RAW',n,size(sfcelevIncr),sfcelevIncr,2)
+#endif
   allocate(sfcelevIncr_tmp(HYMAP3_routing_struc(n)%nseqall*LIS_rc%nensem(n)))
   sfcelevIncr_tmp = 0.0
   if (HYMAP3_daSWOT_struc(n)%useLocalUpd.eq.1) then
@@ -156,6 +164,10 @@ subroutine HYMAP3_updateSWOT(n, Routing_State, Routing_Incr_State)
      enddo
   enddo
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_vector('DA_INCREMENT_APPLIED',n,size(sfcelevIncr_tmp),sfcelevIncr_tmp,2)
+#endif
   do i=1,HYMAP3_routing_struc(n)%nseqall
      do m=1,LIS_rc%nensem(n)
         t = (i-1)*LIS_rc%nensem(n)+m
@@ -165,6 +177,10 @@ subroutine HYMAP3_updateSWOT(n, Routing_State, Routing_Incr_State)
      enddo
   enddo
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_vector('DA_STATE_REQUESTED',n,size(sfcelev),sfcelev,0)
+#endif
   deallocate(sfcelevIncr_tmp)
   if (allocated(hasWeight)) deallocate(hasWeight)
   if (allocated(bestWeight)) deallocate(bestWeight)

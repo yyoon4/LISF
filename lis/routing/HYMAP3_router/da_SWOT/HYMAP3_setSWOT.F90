@@ -18,6 +18,10 @@
 ! !INTERFACE:
 subroutine HYMAP3_setSWOT(n, Routing_State)
 ! !USES:
+
+#ifdef HYMAP3_MASS_DIAG
+  use WM_mass_diag_mod, only: wm_context,wm_member
+#endif
   use ESMF
   use HYMAP3_modelMod, only: HYMAP3_get_volume_profile
   use HYMAP3_routingMod, only: HYMAP3_routing_struc
@@ -67,6 +71,10 @@ subroutine HYMAP3_setSWOT(n, Routing_State)
   call ESMF_FieldGet(sfcelvField,localDE=0,farrayPtr=sfcelv,rc=status)
   call LIS_verify(status,'ESMF_FieldGet failed for sfcelv in HYMAP3_getSWOT')
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_mark('SET_PHYSICAL_PRE',n,0)
+#endif
   ensCheck = .true.
   diffCheck = .false.
 
@@ -77,6 +85,10 @@ subroutine HYMAP3_setSWOT(n, Routing_State)
      enddo
   enddo
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_vector('SET_REQUEST_ABS',n,size(sfcelv),sfcelv,1)
+#endif
   do i=1,HYMAP3_routing_struc(n)%nseqall
      do m=1,LIS_rc%nensem(n)
         t = (i-1)*LIS_rc%nensem(n)+m
@@ -103,6 +115,10 @@ subroutine HYMAP3_setSWOT(n, Routing_State)
      enddo
   enddo
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_vector('SET_QC_ABS',n,size(sfcelv),sfcelv,1)
+#endif
   !update surface level and then update the storage.
   do i=1,HYMAP3_routing_struc(n)%nseqall
      do m=1,LIS_rc%nensem(n)
@@ -135,4 +151,8 @@ subroutine HYMAP3_setSWOT(n, Routing_State)
      enddo
   enddo
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_mark('SET_PHYSICAL_POST',n,0)
+#endif
 end subroutine HYMAP3_setSWOT

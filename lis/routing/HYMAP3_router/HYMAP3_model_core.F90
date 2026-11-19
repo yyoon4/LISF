@@ -52,6 +52,10 @@ subroutine HYMAP3_model_core(n, it, mis, nseqall, nz, time, dt,  &
   ! ================================================
   !ag(1May2021)
   !ag(8Apr2022)
+
+#ifdef HYMAP3_MASS_DIAG
+  use WM_mass_diag_mod, only: wm_context,wm_member
+#endif
   use HYMAP3_bifMod
   use HYMAP3_managMod
   use HYMAP3_modelMod
@@ -773,6 +777,10 @@ subroutine HYMAP3_model_core(n, it, mis, nseqall, nz, time, dt,  &
 
   ! ================================================
 
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_core('CORE_PRE_FLUX',n,nseqall,rivsto,fldsto,runoff,rivinf,fldinf,rivout,fldout,dt)
+#endif
   !Update water storage in rivers and floodplains
   do ic=1,nseqall
      call HYMAP3_calc_stonxt(dt,rivout(ic),fldout(ic),rivinf(ic), &
@@ -780,6 +788,10 @@ subroutine HYMAP3_model_core(n, it, mis, nseqall, nz, time, dt,  &
   enddo
 
   ! ================================================
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_core('CORE_POST_FLUX',n,nseqall,rivsto,fldsto,runoff,rivinf,fldinf,rivout,fldout,dt)
+#endif
   !Calculate runoff in the river network for the current time step
   do ic=1,nseqall
      if(outlet(ic)==mis)cycle
@@ -788,6 +800,10 @@ subroutine HYMAP3_model_core(n, it, mis, nseqall, nz, time, dt,  &
   enddo
 
   ! ================================================
+
+#ifdef HYMAP3_MASS_DIAG
+  call wm_hymap_core('CORE_POST_RUNOFF',n,nseqall,rivsto,fldsto,runoff,rivinf,fldinf,rivout,fldout,dt)
+#endif
   ! Calculate surface water storage [mm]
   do ic=1,nseqall
      if(outlet(ic)==mis)cycle

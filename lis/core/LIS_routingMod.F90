@@ -21,6 +21,10 @@ module LIS_routingMod
 !  1 Oct 2022: Yeosang Yoon; excluded RAPID from sws and DA modules
 !
 ! !USES:
+
+#ifdef HYMAP3_MASS_DIAG
+  use WM_mass_diag_mod, only: wm_context,wm_member
+#endif
   use ESMF
   use LIS_coreMod
   use LIS_DAobs_pluginMod
@@ -489,6 +493,11 @@ contains
 !------------------------------------------------------------------------
 !   apply the routing perturbations to the the Routing state
 !------------------------------------------------------------------------
+
+#ifdef HYMAP3_MASS_DIAG
+                   wm_context='PERT'
+                   call wm_hymap_mark('PERT_PRE',n,0)
+#endif
                    call routingdagetstatevar( &
                         trim(LIS_rc%routingModel)//"+"//&
                         trim(LIS_rc%daset(k))//char(0), n, &
@@ -507,6 +516,11 @@ contains
                         trim(LIS_rc%routingModel)//"+"//&
                         trim(LIS_rc%daset(k))//char(0), n, &
                         LIS_Routing_State(n,k))
+
+#ifdef HYMAP3_MASS_DIAG
+                   call wm_hymap_mark('PERT_POST',n,0)
+                   wm_context='NONE'
+#endif
                 endif
              endif
           endif
@@ -599,6 +613,10 @@ contains
     deallocate(lsm_field)
 
     allocate(lsm_field(lsm_state_count))
+
+#ifdef HYMAP3_MASS_DIAG
+    call wm_hymap_vector('PERT_INPUT',n,stateSize,stvar(1,:),0)
+#endif
     allocate(typ(lsm_state_count))
 
     do i=1,lsm_state_count
@@ -679,6 +697,10 @@ contains
           enddo
        enddo
 
+
+#ifdef HYMAP3_MASS_DIAG
+       call wm_hymap_vector('PERT_RANDOM_ADDED',n,stateSize,stvar(1,:),0)
+#endif
        if(LIS_rc%pert_bias_corr.eq.1) then
           do i=1,stateSize/LIS_rc%nensem(n)
              do f=1,LIS_rc%nmetforc
@@ -703,6 +725,10 @@ contains
        endif
     endif
 
+
+#ifdef HYMAP3_MASS_DIAG
+    call wm_hymap_vector('PERT_AFTER_MEAN_CORR',n,stateSize,stvar(1,:),0)
+#endif
     deallocate(lsm_state_objs)
     deallocate(lsm_field)
     deallocate(typ)
@@ -844,6 +870,11 @@ contains
        if(LIS_rc%routing_DAinst_valid(k)) then
           call routingdasetstatevar(trim(LIS_rc%routingmodel)//"+"//&
                trim(LIS_rc%daset(k))//char(0), n, LIS_Routing_State(n,k))
+#ifdef HYMAP3_MASS_DIAG
+          call wm_hymap_mark('DA_SET_POST',n,0)
+          wm_context='NONE'
+#endif
+
        endif
     endif
   end subroutine LIS_routing_DASetStateVar
@@ -957,6 +988,11 @@ contains
     if(LIS_rc%routingmodel.ne."none" .and. &
          LIS_rc%routingmodel.ne."RAPID router") then
        if(LIS_rc%routing_DAinst_valid(k)) then
+
+#ifdef HYMAP3_MASS_DIAG
+          wm_context='DA'
+          call wm_hymap_mark('DA_PRE',n,0)
+#endif
           call routingdaupdatestate(trim(LIS_rc%routingmodel)//"+"//&
                trim(LIS_rc%daset(k))//char(0), n, &
                LIS_Routing_State(n,k), &

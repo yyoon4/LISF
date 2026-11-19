@@ -37,6 +37,10 @@
 subroutine HYMAP3_routing_run(n)
 
   ! !USES:
+
+#ifdef HYMAP3_MASS_DIAG
+  use WM_mass_diag_mod, only: wm_context,wm_member
+#endif
   use ESMF
   use HYMAP3_evapMod
   use HYMAP3_initMod
@@ -370,6 +374,12 @@ subroutine HYMAP3_routing_run(n)
              end where
            endif
 
+
+#ifdef HYMAP3_MASS_DIAG
+    wm_member=m
+    call wm_hymap_banner('WM_MASS_DIAG_ENABLED',n)
+    call wm_hymap_mark('ROUTE_PRE',n,wm_member)
+#endif
            call HYMAP3_model(n,real(HYMAP3_routing_struc(n)%imis),&
                 LIS_rc%lnc(n),&
                 LIS_rc%lnr(n),&
@@ -459,6 +469,10 @@ subroutine HYMAP3_routing_run(n)
                 HYMAP3_routing_struc(n)%levstomax,&
                 HYMAP3_routing_struc(n)%fldonlystomax(:,:,m),&
                 HYMAP3_routing_struc(n)%fldstoatlev(:,m))
+
+#ifdef HYMAP3_MASS_DIAG
+    call wm_hymap_mark('ROUTE_POST',n,wm_member)
+#endif
 
            rnfsto_mm(:,m)=1000*HYMAP3_routing_struc(n)%rnfsto(:,m)/&
                 HYMAP3_routing_struc(n)%grarea
@@ -588,6 +602,12 @@ subroutine HYMAP3_routing_run(n)
           end where
         endif
 
+
+#ifdef HYMAP3_MASS_DIAG
+    wm_member=1
+    call wm_hymap_banner('WM_MASS_DIAG_ENABLED',n)
+    call wm_hymap_mark('ROUTE_PRE',n,wm_member)
+#endif
         call HYMAP3_model(n,real(HYMAP3_routing_struc(n)%imis),&
              LIS_rc%lnc(n),&
              LIS_rc%lnr(n),&
@@ -678,6 +698,10 @@ subroutine HYMAP3_routing_run(n)
              HYMAP3_routing_struc(n)%levstomax,&
              HYMAP3_routing_struc(n)%fldonlystomax(:,:,1),&
              HYMAP3_routing_struc(n)%fldstoatlev(:,1))
+
+#ifdef HYMAP3_MASS_DIAG
+    call wm_hymap_mark('ROUTE_POST',n,wm_member)
+#endif
 
         rnfsto_mm(:,1)=1000*HYMAP3_routing_struc(n)%rnfsto(:,1)/&
              HYMAP3_routing_struc(n)%grarea
